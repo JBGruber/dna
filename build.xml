@@ -1,9 +1,7 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!-- WARNING: Eclipse auto-generated file.
-              Any modifications will be overwritten.
-              To include a user specific buildfile here, simply create one in the same
-              directory with the processing instruction <?eclipse.ant.import?>
-              as the first entry and export the buildfile again. --><project basedir="." default="build" name="DNA">
+<project name="travis playground" default="dist" basedir=".">
+    <description>
+        travis stuff
+</description>
     <property environment="env"/>
     <property name="debuglevel" value="source,lines,vars"/>
     <property name="target" value="1.8"/>
@@ -51,13 +49,8 @@
         <property name="build.compiler" value="org.eclipse.jdt.core.JDTCompilerAdapter"/>
         <antcall target="build"/>
     </target>
-    <target name="DNA beta 19">
-        <java classname="dna.Dna" failonerror="true" fork="yes">
-            <classpath refid="DNA.classpath"/>
-        </java>
-    </target>
     <target name="DNA beta 20">
-        <java classname="dna.Dna" failonerror="true" fork="yes">
+        <java classname="dna.Dna" failonerror="false" fork="yes">
             <classpath refid="DNA.classpath"/>
         </java>
     </target>

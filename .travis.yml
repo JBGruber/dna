@@ -25,8 +25,6 @@ matrix:
       - R CMD check *tar.gz
     
     language: java
-    jdk:
-      - openjdk8
     deploy:
     provider: releases
     file: target/dna-daily.jar

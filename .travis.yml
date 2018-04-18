@@ -1,44 +1,37 @@
-language: r
-sudo: required
-cache: packages
-
-r:
-  - devel
-  - release
-  - oldrel
-  
-before_install:
-  - cd rDNA
-
-addons:
-  apt:
+matrix:
+  include:
+    language: r
+    sudo: required
+    cache: packages
+    r:
+      - devel
+      - release
+      - oldrel
+    before_install:
+      - cd rDNA
+    addons:
+    apt:
     packages:
-       - default-jdk
-       - r-cran-rjava
-       - libudunits2-dev
-       
-r_packages:
-  - devtools
-
-r_github_packages:  
-  - igraph/rigraph
-  
-script:
-  - Rscript -e "install.packages(c('rJava', 'ggraph'))" # Some packages need to be installed for every R verion
-  - R CMD build .
-  - R CMD check *tar.gz
-  
-before_deploy:
-  - cd ..
-
-language: java
-jdk:
-- openjdk8
-
-deploy:
-  provider: releases
-  file: target/dna-daily.jar
-  on:
-    repo: JBGruber/dna
-    all_branches: true
-    tags: true
+      - default-jdk
+      - r-cran-rjava
+      - libudunits2-dev
+    r_packages:
+      - devtools
+    r_github_packages:  
+      - igraph/rigraph
+    script:
+      - Rscript -e "install.packages(c('rJava', 'ggraph'))" # Some packages need to be installed for every R verion
+      - R CMD build .
+      - R CMD check *tar.gz
+    
+    language: java
+      before_deploy:
+    jdk:
+      - openjdk8
+    deploy:
+    provider: releases
+    file: target/dna-daily.jar
+    on:
+      repo: JBGruber/dna
+      all_branches: true
+      tags: true

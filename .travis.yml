@@ -25,7 +25,6 @@ matrix:
       - R CMD check *tar.gz
     
     language: java
-      before_deploy:
     jdk:
       - openjdk8
     deploy:

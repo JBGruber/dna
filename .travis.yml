@@ -11,3 +11,7 @@ deploy:
   file: "/home/travis/build/JBGruber/dna/DNA/bin/DNA beta 21.jar"
   on:
     repo: JBGruber/dna
+    tags: true
+    branches:
+      only:
+        - master

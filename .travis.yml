@@ -13,5 +13,5 @@ deploy:
   file: "/home/travis/build/JBGruber/dna/DNA/bin/DNA beta 21.jar"
   skip_cleanup: true
   on:
-    tags: true
+    tags: false
 

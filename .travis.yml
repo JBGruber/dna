@@ -2,5 +2,8 @@ language: java
 jdk:
   - oraclejdk8
 
+before_script:
+  - cd DNA
+  
 script: ant build
 

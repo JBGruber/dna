@@ -9,7 +9,7 @@ script: ant build
 
 deploy:
   provider: releases
-  api_key: "$GH_Token"
+  api_key: "2d7b837d48fe5bcc0d8e391fa216af213ab21aba"
   file: "/home/travis/build/JBGruber/dna/DNA/bin/DNA beta 21.jar"
   skip_cleanup: true
   on:

@@ -7,12 +7,10 @@ script: ant build
 deploy:
   provider: releases
   overwrite: true
+  skip_cleanup: true
   api_key:
     secure: ZQvbDNB6upWyG8nrtjVwxOZs51Ig8uu2rwwfSnVC6ahUBQj7WTnuidy2eppI3TJLCTzcFXSZsTxosPYcSVvlGRbCHhLJ9kJRB8nQ9UAXW6/5dYnINjM/75da2XZEp0kBpSOtT0bQXmZcel+JAnbVCcaGh5oEbNfux9MxUSQVmzda/pY6QBzd9K0lO/MPyzSVscWH3WFRUNMk6gtMcjBURxrJtrqxupe/ad4OsnVdddHiRo5ocF6RJFCYkxkTOwkY7HUq4UwN9+oYcC7ivYH5i+XRKuRNrmt7AgOHY4jl3oNuZnTTGpPboeU7WuIomhKWkQinsKxcL/QbhVoc7C18ztHZHDE5BPFH6Zne4WcP8sWZDAItfYKHs5tyxiy4BuUHbA8pHBDzx/yuyorghIhoHu5CGm6zkZsgnqaLoTFt/Y48IjTRfr9qpDPIQQOwQ6+Qyr21CVth6C0CCl8HRc8o0HBjUDs0ziNkRAe/4iQKx9HjfHXAUeaRFte87rmvnE3R4fmpwV6V5GHlrKfjhLrshkezIxJ+g8ZpAMwqVd3+vfvBkgAVf3HBY5y+TPJmgqWJHdhfbYdt4VeohXpG/RqAvLSRlLSbMDbQAbEypzaF0diSTMaE6W822U6XuKQQB161wC9xDbGLZYh5FIF2xIT/j4BZRn1L4SHYdZoxac9rzbk=
-  file: "/DNA/bin/DNA beta 21.jar"
+  file: "DNA beta 21.jar"
   on:
     repo: JBGruber/dna
     tags: false
-    branches:
-      only:
-        - master

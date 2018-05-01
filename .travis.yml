@@ -12,7 +12,7 @@ deploy:
   file: "/DNA/bin/DNA beta 21.jar"
   on:
     repo: JBGruber/dna
-    tags: true
+    tags: false
     branches:
       only:
         - master

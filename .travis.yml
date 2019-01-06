@@ -28,3 +28,6 @@ script:
   - Rscript -e "install.packages(c('rJava', 'ggraph'))" # Some packages need to be installed for every R version
   - R CMD build .
   - R CMD check *tar.gz
+
+after_success:
+    - Rscript -e 'covr::codecov()'

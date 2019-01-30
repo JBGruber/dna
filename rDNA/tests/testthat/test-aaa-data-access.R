@@ -11,18 +11,21 @@ test_that("download Jar", {
   }, TRUE) 
 })
 
-test_that("make DNA",{
-  expect_equal({
-    unlink(dir(pattern = "dna-.+\\.jar$"))
-    system("cd ../../../ && make dna")
-    jar <- dir(path = "../../../output", pattern = "^dna-.+\\.jar$",
-               full.names = TRUE)
-    file.copy(
-      from = jar,
-      to = basename(jar)
-    )
-  }, TRUE)
-})
+# only for local testing
+if (!nchar(Sys.getenv("TRAVIS_R_VERSION")) > 0) {
+  test_that("make DNA",{
+    expect_equal({
+      unlink(dir(pattern = "dna-.+\\.jar$"))
+      system("cd ../../../ && make dna")
+      jar <- dir(path = "../../../output", pattern = "^dna-.+\\.jar$",
+                 full.names = TRUE)
+      file.copy(
+        from = jar,
+        to = basename(jar)
+      )
+    }, TRUE)
+  })
+}
 
 test_that("initialise DNA",{
   expect_equal({

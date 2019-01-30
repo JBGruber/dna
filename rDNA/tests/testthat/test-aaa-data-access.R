@@ -11,19 +11,23 @@ test_that("download Jar", {
   }, TRUE) 
 })
 
-# In case there have been recent changes in Java not yet online
-unlink(dir(pattern = "../../dna-.+\\.jar$"))
-system("cd ../../../ && make dna")
-jar <- dir(path = "../../../output", pattern = "^dna-.+\\.jar$",
-           full.names = TRUE)
-file.copy(
-  from = jar,
-  to = basename(jar)
-)
+test_that("make DNA",{
+  expect_equal({
+    unlink(dir(pattern = "dna-.+\\.jar$"))
+    system("cd ../../../ && make dna")
+    jar <- dir(path = "../../../output", pattern = "^dna-.+\\.jar$",
+               full.names = TRUE)
+    file.copy(
+      from = jar,
+      to = basename(jar)
+    )
+  }, TRUE)
+})
 
 test_that("initialise DNA",{
   expect_equal({
-    dna_init(basename(jar))
+    jar <- dir(pattern = "^dna-.+\\.jar$")
+    dna_init(jar)
     rJava::.jarray(1:5)@jsig
   }, "[I")
 })

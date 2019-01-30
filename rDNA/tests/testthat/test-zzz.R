@@ -6,5 +6,5 @@ test_that("str_length is number of characters", {
 
 teardown({
   unlink("sample.dna")
-  unlink(formals(dna_downloadJar)$filename)
+  unlink(dir(pattern = "^dna-.+\\.jar$"))
 })

@@ -1,18 +1,21 @@
 # Startup ----------------------------------------------------------------------
 
-# display version number and date when the package is loaded
+dnaEnvironment <- new.env(hash = TRUE, parent = emptyenv())
+
+# display version number and date when the package is attached
 #' @importFrom utils packageDescription
 .onAttach <- function(libname, pkgname) {
   desc <- packageDescription(pkgname, libname)
   packageStartupMessage(
-    'Version: ', desc$Version, '\n',
-    'Date:    ', desc$Date, '\n',
-    'Authors: ', 'Philip Leifeld (University of Glasgow),\n',
-    '         Johannes Gruber (University of Glasgow)'
+    'Version:      ', desc$Version, '\n',
+    'Date:         ', desc$Date, '\n',
+    'Author:       Philip Leifeld  (University of Glasgow)\n',
+    'Contributors: Johannes B. Gruber (University of Glasgow),\n',
+    '              Tim Henrichsen  (Scuola superiore Sant\'Anna Pisa)\n',
+    'Project home: github.com/leifeld/dna'
   )
 }
-# some settings
-dnaEnvironment <- new.env(hash = TRUE, parent = emptyenv())
+
 # more settings which quiet concerns of R CMD check about ggplot and dplyr pipelines
 if (getRversion() >= "2.15.1")utils::globalVariables(c("rn",
                                                       "cols3",
@@ -51,8 +54,7 @@ if (getRversion() >= "2.15.1")utils::globalVariables(c("rn",
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' dna_connection(dna_sample())
 #' }
 #' @export
@@ -76,7 +78,7 @@ dna_connection <- function(infile, login = NULL, password = NULL, verbose = TRUE
     infile <- paste0(getwd(), "/", infile)
   }
   if (is.null(dnaEnvironment[["dnaJarString"]])) {
-    stop("No connection between rDNA and the DNA detected. Maybe dna_init() would help.")
+    stop("No connection between rDNA and DNA detected. Maybe dna_init() would help.")
   }
   if (is.null(login) || is.null(password)) {
     export <- .jnew("dna.export/ExporterR", "sqlite", infile, "", "", verbose)
@@ -85,7 +87,7 @@ dna_connection <- function(infile, login = NULL, password = NULL, verbose = TRUE
   }
   obj <- list(dna_connection = export)
   class(obj) <- "dna_connection"
-  if (verbose == TRUE) {
+  if (isTRUE(verbose)) {
     print(obj)
   }
   return(obj)
@@ -103,46 +105,49 @@ dna_connection <- function(infile, login = NULL, password = NULL, verbose = TRUE
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample(), verbose = FALSE)
 #' conn
 #' }
 #' @export
 print.dna_connection <- function(x, ...) {
-  .jcall(x$dna_connection, "V", "rShow")
+  cat(.jcall(x$dna_connection, "S", "rShow"))
 }
 
-#' Download the binary DNA JAR file
+#' Download the binary DNA jar file
 #'
-#' Downloads the newest released DNA JAR file necessary for running
-#' \code{dna_init}.
+#' Downloads the newest released DNA jar file necessary for running
+#' \link{dna_init}.
 #'
-#' This simple function downloads the DNA JAR from the latest release.
+#' This function uses GitHub's API to download the latest DNA jar file to the
+#' working directory.
 #'
-#' @param filename Name of the downloaded Jar.
-#' @param filepath Download path. Defaults to working directory.
-#' @param force Logical. Should the file be overwritten if it already exists.
+#' @param path Directory path in which the jar file will be stored.
+#' @param force Logical. Should the file be overwritten if it already exists?
+#' @param returnString Logical. Return the file name of the downloaded jar file?
 #'
-#' @examples
-#' \dontrun{
-#' dna_downloadJar()
-#' }
 #' @export
+#'
 #' @importFrom utils download.file
-dna_downloadJar <- function(filename = "dna-2.0-beta22.jar",
-                            filepath = character(),
-                            force = FALSE) {
-  # temporary fix until next release
-  url <- paste0("https://github.com/leifeld/dna/raw/master/manual/dna-2.0-beta22.jar")
-  if (any(!file.exists(paste0(filepath, filename)), force)) {
-    download.file(url = url,
-                  destfile = paste0(filepath, filename),
-                  mode = "wb",
-                  cacheOK = FALSE,
-                  extra = character())
+dna_downloadJar <- function(path = paste0(dirname(system.file(".", package = "rDNA")), "/", "extdata"),
+                            force = FALSE,
+                            returnString = FALSE) {
+  u <- url("https://api.github.com/repos/leifeld/dna/releases")
+  open(u)
+  lines <- readLines(u, warn = FALSE)
+  m <- gregexpr("https://github.com/leifeld/dna/releases/download/.{3,15}?/dna-.{3,15}?\\.jar", lines, perl = TRUE)
+  m <- regmatches(lines, m)[[1]]
+  close(u)
+  filename <- strsplit(m[1], "/")[[1]]
+  filename <- filename[length(filename)]
+  filename <- paste0(path, ifelse(endsWith(path, "/"), "", "/"), filename)
+  if (force == TRUE || (force == FALSE && !file.exists(filename))) {
+    download.file(url = m[1], destfile = filename, mode = "wb", cacheOK = FALSE)
   } else {
-    warning("Newest DNA JAR file already exists. Try \"force = TRUE\" if you want to download it anyway.")
+    warning("Latest DNA jar file already exists. Use 'force = TRUE' to overwrite it.")
+  }
+  if (returnString == TRUE) {
+    return(filename)
   }
 }
 
@@ -165,7 +170,7 @@ dna_downloadJar <- function(filename = "dna-2.0-beta22.jar",
 #'
 #' @examples
 #' \dontrun{
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' dna_gui()
 #' }
 #' @export
@@ -174,35 +179,27 @@ dna_gui <- function(infile = NULL,
                     memory = 1024,
                     verbose = TRUE) {
   if (is.null(dnaEnvironment[["dnaJarString"]])) {
-    stop("No connection between rDNA and the DNA detected. Maybe dna_init() would help.")
+    stop("No connection between rDNA and DNA detected. Maybe dna_init() would help.")
   }
   if (!is.null(infile)) if (!file.exists(infile)) {
     stop(if (grepl("/", infile, fixed = TRUE)) {
-      paste0("infile \"", infile, "\" could not be located.")
+      paste0("'", infile, "' could not be located.")
     } else {
-      paste0(
-        "infile \"",
-        infile,
-        "\" could not be located in working directory \"",
-        getwd(),
-        "\"."
+      paste0("'", infile, "' could not be located in working directory '", getwd(), "'."
       )
     })
   }
   djs <- dnaEnvironment[["dnaJarString"]]
   if (is.null(djs)) {
-    stop(paste0(djs, " could not be located in directory ", getwd(), "."))
+    stop(paste0("'", djs, "' could not be located in working directory '", getwd(), "'."))
   }
   if (!is.null(infile)) {
     if (!file.exists(infile)) {
       stop(
         if (grepl("/", infile, fixed = TRUE)) {
-          paste0("infile ", infile, " could not be located.")
+          paste0("'", infile, "' could not be located.")
         } else {
-          paste0("infile ",
-                 infile,
-                 " could not be located in working directory ",
-                 getwd(), ".")
+          paste0("'", infile, "' could not be located in working directory '", getwd(), "'.")
         }
       )
     }
@@ -219,6 +216,9 @@ dna_gui <- function(infile = NULL,
   } else {
     jp <- paste0(javapath, "/java")
   }
+  if (verbose == TRUE) {
+    message("To return to R, close the DNA window when done.")
+  }
   system(paste0(jp, " -jar -Xmx", memory, "M ", djs, f), intern = !verbose)
 }
 
@@ -234,36 +234,69 @@ dna_gui <- function(infile = NULL,
 #' version or path, the \R session would need to be restarted first.
 #'
 #' @param jarfile The file name of the DNA jar file, e.g.,
-#'   \code{"dna-2.0-beta22.jar"}.
+#'   \code{"dna-2.0-beta23.jar"}. Will be auto-detected by choosing the most
+#'   recent version stored in the library path or working directory if
+#'   \code{jarfile = NULL}.
 #' @param memory The amount of memory in megabytes to allocate to DNA, for
 #'   example \code{1024} or \code{4096}.
+#' @param returnString Return a character object representing the jar file name?
 #'
-#' @examples
-#' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
-#' }
 #' @export
 #' @import rJava
-dna_init <- function(jarfile = "dna-2.0-beta22.jar", memory = 1024) {
+dna_init <- function(jarfile = NULL, memory = 1024, returnString = FALSE) {
+  if (is.null(jarfile) || is.na(jarfile)) {
+
+    # auto-detect file name in library directory
+    path <- paste0(dirname(system.file(".", package = "rDNA")), "/", "extdata")
+    files <- dir(path)
+    files <- files[grepl("^dna-.+\\.jar$", files)]
+    files <- sort(files)
+    if (length(files) > 0) {
+      jarfile <- paste0(path, "/", files[length(files)])
+    }
+
+    # auto-detect file name in working directory
+    jarfile_wd <- NULL
+    path_wd <- getwd()
+    files_wd <- dir(path_wd)
+    files_wd <- files_wd[grepl("^dna-.+\\.jar$", files_wd)]
+    files_wd <- sort(files_wd)
+    if (length(files_wd) > 0) {
+      jarfile_wd <- paste0(path_wd, "/", files_wd[length(files_wd)])
+    }
+
+    # use file in working directory if version is more recent or none found in library path
+    if ((!is.null(jarfile) && !is.null(jarfile_wd) && basename(jarfile_wd) > basename(jarfile)) || is.null(jarfile)) {
+      jarfile <- jarfile_wd
+    }
+
+    # if none was found whatsoever, attempt to download to library path
+    if (is.null(jarfile)) {
+      message("No jar file found. Trying to download most recent version to library path.")
+      jarfile <- dna_downloadJar(path = path, returnString = TRUE)
+      message("Done.")
+    }
+  }
+  if (is.null(jarfile) || length(jarfile) == 0) {
+    message("No DNA jar file found in the library path or working directory.")
+    if (isTRUE(returnString)) {
+      return(NULL)
+    }
+  }
+  if (!is.character(jarfile) || length(jarfile) > 1 || !grepl("^dna-.+\\.jar$", basename(jarfile))) {
+    stop("'jarfile' must be a character object of length 1 that points to the DNA jar file.")
+  }
   if (!file.exists(jarfile)) {
-    stop(if (grepl("/", jarfile, fixed = TRUE)) {
-      paste0("jarfile \"", jarfile, "\" could not be located.")
-    } else {
-      paste0(
-        "jarfile \"",
-        jarfile,
-        "\" could not be located in working directory \"",
-        getwd(),
-        "\"."
-      )
-    })
+    stop(paste0("jarfile '", jarfile, "' could not be located."))
   }
   assign("dnaJarString", jarfile, pos = dnaEnvironment)
   message(paste("Jar file:", dnaEnvironment[["dnaJarString"]]))
   .jinit(dnaEnvironment[["dnaJarString"]],
          force.init = TRUE,
          parameters = paste0("-Xmx", memory, "m"))
+  if (isTRUE(returnString)) {
+    return(jarfile)
+  }
 }
 
 #' Provides a small sample database
@@ -279,18 +312,19 @@ dna_init <- function(jarfile = "dna-2.0-beta22.jar", memory = 1024) {
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' dna_connection(dna_sample())
 #' }
-#' @author Johannes Gruber
+#'
+#' @author Johannes B. Gruber
+#'
 #' @export
 dna_sample <- function(overwrite = FALSE,
                        verbose = TRUE) {
   if (file.exists(paste0(getwd(), "/sample.dna")) & overwrite == FALSE) {
     if (verbose) {
       warning(
-        "Sample file exists in wd. Use overwrite = TRUE to create fresh sample file."
+        "Sample file already exists in working directory. Use 'overwrite = TRUE' to create fresh sample file."
       )
     }
   } else {
@@ -406,7 +440,7 @@ dna_addAttribute <- function(connection,
                alias,
                notes)
   if (verbose == TRUE) {
-    cat("A new attribute with ID", id, "was added to the database.")
+    message("A new attribute with ID", id, "was added to the database.")
   }
   if (returnID == TRUE) {
     return(id)
@@ -505,11 +539,272 @@ dna_addDocument <- function(connection,
                type,
                dateLong)
   if (verbose == TRUE) {
-    cat("A new document with ID", id, "was added to the database.")
+    message("A new document with ID", id, "was added to the database.")
   }
   if (returnID == TRUE) {
     return(id)
   }
+}
+
+#' Add a statement to the DNA database
+#'
+#' Add a new statement to the DNA database.
+#'
+#' The \code{dna_addStatement} function can add a new statement to an existing
+#' DNA database. The user supplies a \link{dna_connection} object as well as
+#' the document ID, location of the statement in the document, and the variables
+#' and their values. As different statement types have different variables, the
+#' \code{...} argument catches all variables and their values supplied by the
+#' user. The statement ID will be automatically generated and can be returned
+#' if \code{returnID} is set to \code{TRUE}.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param documentID An integer specifying the ID of the document for which the
+#' statement should be added.
+#' @param startCaret An integer for the start location of the statement in the
+#' document text. Must be non-negative and not larger than the number of
+#' characters minus one in the document.
+#' @param endCaret An integer for the stop location of the statement in the
+#' document text. Must be non-negative, greater than \code{startCaret}, and not
+#' larger than the number of characters in the document.
+#' @param statementType The statement type of the statement that will be added.
+#' Can be provided as an integer ID of the statement type or as a character
+#' object representing the name of the statement type (if there is no
+#' ambiguity).
+#' @param coder An integer value indicating which coder created the document.
+#' @param returnID Return the ID of the newly created statement as a numeric
+#'   value?
+#' @param verbose Print details?
+#' @param ... Values of the variables contained in the statement, for example
+#' \code{organization = "some actor", concept = "my concept", agreement = 1}.
+#' Values for Boolean variables can be provided as \code{logical} values
+#' (\code{TRUE} or \code{FALSE}) or \code{numeric} values (\code{1} or
+#' \code{0}).
+#'
+#' @author Philip Leifeld
+#' @export
+dna_addStatement <- function(connection,
+                             documentID,
+                             startCaret = 1,
+                             endCaret = 2,
+                             statementType = "DNA Statement",
+                             coder = 1,
+                             returnID = FALSE,
+                             verbose = TRUE,
+                             ...) {
+  if (!is.integer(documentID)) {
+    if (is.numeric(documentID)) {
+      documentID <- as.integer(documentID)
+    } else {
+      stop("'documentID' must be a numeric value specifying the ID of the document to which the statement should be added. You can look up document IDs using the 'dna_getDocuments' function.")
+    }
+  }
+  if (!is.integer(startCaret)) {
+    if (is.numeric(startCaret)) {
+      startCaret <- as.integer(startCaret)
+    } else {
+      stop("'startCaret' must be a single numeric value specifying the start location in of the statement in the document.")
+    }
+  }
+  if (!is.integer(endCaret)) {
+    if (is.numeric(endCaret)) {
+      endCaret <- as.integer(endCaret)
+    } else {
+      stop("'endCaret' must be a single numeric value specifying the end location in of the statement in the document.")
+    }
+  }
+  if (!is.character(statementType) && !is.numeric(statementType)) {
+    stop("'statementType' must be a numeric ID of the statement type or a character object indicating the name of the statement type.")
+  } else if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (!is.integer(coder)) {
+    if (is.numeric(coder)) {
+      coder <- as.integer(coder)
+    } else {
+      stop("The coder must be provided as a numeric object (see dna_getCoders).")
+    }
+  }
+  ellipsis <- list(...)
+  ellipsis <- lapply(ellipsis, function(x) {
+    if (is.logical(x)) {
+      if (x == TRUE) {
+        x <- 1
+      } else if (x == FALSE) {
+        x <- 0
+      }
+    }
+    if (is.numeric(x)) {
+      x <- as.integer(x)
+    }
+    if (!class(x) %in% c("character", "integer", "logical")) {
+      stop("All supplied values must be character, integer, or logical.")
+    }
+    if (length(x) != 1) {
+      stop("All supplied values must be of length 1.")
+    }
+    return(x)
+  })
+  varNames <- names(ellipsis)
+  ellipsis <- as.data.frame(ellipsis, stringsAsFactors = FALSE)
+  ellipsis <- .jarray(lapply(ellipsis, .jarray))
+
+  id <- .jcall(connection$dna_connection,
+               "I",
+               "addStatement",
+               documentID,
+               startCaret,
+               endCaret,
+               statementType,
+               coder,
+               varNames,
+               ellipsis,
+               verbose)
+
+  if (returnID == TRUE) {
+    return(id)
+  }
+}
+
+#' Add a new statement type (without variables) to the database
+#'
+#' Add a new statement type (without variables) to the database.
+#'
+#' Add a new statement type to a database. The statement type contains no
+#' variables but can be populated with variables using the
+#' \link{dna_addVariable} function. Along with the the label used to describe
+#' the statement type, a color needs to be supplied in order to display the
+#' statement type in this color in the GUI (see \link{dna_gui}).
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param label A descriptive label for the statement type. For example
+#'   \code{"DNA Statement" or "My new statement type"}. The label may contain
+#'   spaces.
+#' @param color A color in the form of a hexadecimal RGB string, such as
+#'   \code{"#FFFF00"} for yellow.
+#'
+#' @export
+dna_addStatementType <- function(connection, label, color = "#FFFF00") {
+  if (is.null(label) || is.na(label) || length(label) != 1 || !is.character(label)) {
+    stop("'label' must be a character object of length 1.")
+  }
+  if (is.null(color) || is.na(color) || length(color) != 1 || !is.character(color)) {
+    stop("'color' must be a character object of length 1 containing a hexadecimal RGB value.")
+  }
+  if (!grepl("^#[0-9a-fA-F]{6}$", color)) {
+    stop("'color' is not a hex RGB value of the form '#FFFF00'.")
+  }
+  .jcall(connection$dna_connection, "V", "addStatementType", label, color)
+}
+
+#' Add a new variable to a statement type in the database
+#'
+#' Add a new variable to a statement type in the database.
+#'
+#' Add a new variable to an existing statement type in the database, based on
+#' the statement type ID or label, a name for the new variable, and a data type
+#' specification.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type in which the new variable should be
+#'   defined. The statement type can be supplied as an integer ID or character
+#'   string, for example \code{1} or \code{"DNA Statement"}.
+#' @param variable The name of the new variable as a character object. Only
+#'   characters and numbers are allowed, i.e., no whitespace characters.
+#' @param dataType The data type of the new variable. Valid values are 
+#'   \code{"short text"} (for things like persons, organizations, locations
+#'   etc., up to 200 characters), \code{"long text"} (for things like notes,
+#'   can store more than 200 characters), \code{"boolean"} (for qualifier
+#'   variables such as a binary agreement variable), and \code{"integer"} (for
+#'   ordinal Likert scales, such as -5 to +5 or -1 to +1).
+#' @param simulate Should the changes only be simulated instead of actually
+#'   applied to the DNA connection and the SQL database? This can help to
+#'   plan more complex recode operations.
+#' @param verbose Print details about the recode operations?
+#'
+#' @examples
+#' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' dna_addVariable(conn, 1, "location", "short text")
+#' }
+#'
+#' @export
+dna_addVariable <- function(connection,
+                            statementType = 1,
+                            variable,
+                            dataType = "short text",
+                            simulate,
+                            verbose) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(variable) || is.na(variable) || length(variable) != 1 || !is.character(variable)) {
+    stop("'variable' must be a character object of length 1.")
+  }
+  if (grepl("\\W", variable)) {
+    stop("'variable' must not contain any spaces. Only characters and numbers are allowed.")
+  }
+  if (is.null(dataType) || is.na(dataType) || length(dataType) != 1 || !is.character(dataType)) {
+    stop("'dataType' must be a character object of length 1.")
+  }
+  if (!dataType %in% c("short text", "long text", "integer", "boolean")) {
+    stop("'dataType' must be 'short text', 'long text', 'integer', or 'boolean'.")
+  }
+  if (is.null(simulate) || is.na(simulate) || !is.logical(simulate) || length(simulate != 1)) {
+    stop("'simulate' must be a logical value of length 1")
+  }
+  if (is.null(verbose) || is.na(verbose) || !is.logical(verbose) || length(verbose != 1)) {
+    stop("'verbose' must be a logical value of length 1")
+  }
+  .jcall(connection$dna_connection,
+         "V",
+         "addVariable",
+         statementType,
+         variable,
+         dataType,
+         simulate,
+         verbose)
+}
+
+#' Change the color of a statement type
+#'
+#' Change the color of a statement type.
+#'
+#' This function assigns a new color to a statement type. The color is used to
+#' display statements of this type in the DNA GUI (see \link{dna_gui}).
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type whose color should be updated. The
+#' statement type can be supplied as an integer ID or character string, for
+#' example \code{1} or \code{"DNA Statement"}.
+#' @param color A color in the form of a hexadecimal RGB string, such as
+#'   \code{"#FFFF00"} for yellow.
+#'
+#' @export
+dna_colorStatementType <- function(connection, statementType, color = "#FFFF00") {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(color) || is.na(color) || length(color) != 1 || !is.character(color)) {
+    stop("'color' must be a character object of length 1 containing a hexadecimal RGB value.")
+  }
+  if (!grepl("^#[0-9a-fA-F]{6}$", color)) {
+    stop("'color' is not a hex RGB value of the form '#FFFF00'.")
+  }
+  .jcall(connection$dna_connection, "V", "colorStatementType", statementType, color)
 }
 
 #' Retrieve a dataframe with attributes from a DNA connection.
@@ -538,7 +833,7 @@ dna_addDocument <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' attributes <- dna_getAttributes(statementType = 1,
 #'                                 variable = "organization",
@@ -600,7 +895,7 @@ dna_getAttributes <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' documents <- dna_getDocuments(conn)
 #' documents$title[1] <- "New title for first document"
@@ -629,6 +924,197 @@ dna_getDocuments <- function(connection) {
   documents$date <- as.POSIXct(documents$date / 1000, origin = "1970-01-01")
   documents <- as.data.frame(documents, stringsAsFactors = FALSE)
   return(documents)
+}
+
+#' Retrieve a dataframe with statements from a DNA connection
+#'
+#' Retrieve a dataframe with all statements from a DNA connection.
+#'
+#' This function creates a dataframe with one row per statement and contains
+#' columns for the statement ID, document ID, start and end position in the
+#' text, statement type ID, coder ID, and all variables. Statements are
+#' retrieved for a specific statement type. The data frame can then be manually
+#' manipulated and returned to the DNA database using the
+#' \link{dna_setStatements} function.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type for which statements should be
+#'   retrieved. The statement type can be supplied as an integer or character
+#'   string, for example \code{1} or \code{"DNA Statement"}.
+#'
+#' @examples
+#' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' statements <- dna_getStatements(conn, statementType = "DNA Statement")
+#' }
+#'
+#' @author Philip Leifeld
+#' @export
+dna_getStatements <- function(connection, statementType) {
+  if (is.numeric(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (!is.integer(statementType) && !is.character(statementType)) {
+    stop("'statementType' must be integer or character.")
+  }
+  if (length(statementType) != 1) {
+    stop("'statementType' must have length 1.")
+  }
+
+  statements <- J(connection$dna_connection, "getStatements", statementType)
+  statements <- lapply(statements, .jevalArray)
+  statements <- as.data.frame(statements, stringsAsFactors = FALSE)
+
+  variables <- J(connection$dna_connection, "getVariables", statementType)
+  variables <- lapply(variables, .jevalArray)
+  variables <- as.data.frame(variables, stringsAsFactors = FALSE)
+  variables <- variables[, 1]
+
+  colnames(statements) <- c("id",
+                            "documentId",
+                            "startCaret",
+                            "endCaret",
+                            "statementTypeId",
+                            "coder",
+                            variables)
+  return(statements)
+}
+
+#' Retrieve a dataframe with statement types from a DNA connection
+#'
+#' Retrieve a dataframe with all statement types from a DNA connection.
+#'
+#' This function creates a dataframe with one row per statement type and
+#' contains columns for the statement type ID, label, and color (as an RGB hex
+#' string). The statement type IDs can then be used to retrieve the variables
+#' defined within a statement type using the \link{dna_getVariables} function.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#'
+#' @examples
+#' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' statementTypes <- dna_getStatementTypes(conn)
+#' }
+#'
+#' @export
+dna_getStatementTypes <- function(connection) {
+  statementTypes <- J(connection$dna_connection, "getStatementTypes")
+  statementTypes <- lapply(statementTypes, .jevalArray)
+  statementTypes <- as.data.frame(statementTypes, stringsAsFactors = FALSE)
+  colnames(statementTypes) <- c("id", "label", "color")
+  return(statementTypes)
+}
+
+#' Retrieve a dataframe with all variables for a statement type
+#'
+#' Retrieve a dataframe with all variables defined in a given statement type.
+#'
+#' For a given statement type ID (see \link{dna_getStatementTypes}), this
+#' function creates a dataframe with one row per variable and contains columns
+#' for the variable name and the data type associated with this variable.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type for which statements should be
+#'   retrieved. The statement type can be supplied as an integer or character
+#'   string, for example \code{1} or \code{"DNA Statement"}.
+#'
+#' @examples
+#' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' variables <- dna_getVariables(conn, 1)
+#' }
+#'
+#' @export
+dna_getVariables <- function(connection, statementType) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  } else if (!is.character(statementType) && !is.integer(statementType)) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  
+  variables <- J(connection$dna_connection, "getVariables", statementType)
+  variables <- lapply(variables, .jevalArray)
+  variables <- as.data.frame(variables, stringsAsFactors = FALSE)
+  colnames(variables) <- c("label", "type")
+  
+  return(variables)
+}
+
+#' Recast a variable into a different data type
+#'
+#' Recast a variable into a different data type.
+#'
+#' This function converts a variable into a different data type. The user
+#' supplies the statement type in which the variable is defined and the variable
+#' name, and the variable is converted into a different data type.
+#' 
+#' Depending on the current data type of the variable, different actions are
+#' taken as follows:
+#' \describe{
+#'  \item{"short text"}{Will be converted into "long text".}
+#'  \item{"long text"}{Will be converted into "short text". The function goes
+#'    through all statements and truncates the respective values if they are
+#'    longer than 200 characters, both in the statements and attributes.}
+#'  \item{"boolean"}{Will be converted into "integer" by recoding \code{0} into
+#'    \code{-1} and keeping \code{1} as \code{1}.}
+#'  \item{"integer"}{Will be converted into "boolean". If there are precisely
+#'    two values across all statements, the smaller value will be recoded into
+#'    \code{0} and the larger value into \code{1}. If there is only one value
+#'    across all statements, this value will be recoded as \code{1}. If there
+#'    are no statements of this statement type, no recoding will be done. If
+#'    there are more than two values across all statements, an error message
+#'    will be printed.}
+#' }
+#' 
+#' By default, changes are only simulated, but this can be changed using the
+#' \code{simulate} argument in order to actually apply the changes to the
+#' database.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type in which the variable is defined that
+#'   should be recast into a different data type. The statement type can be
+#'   supplied as an integer ID or character string, for example \code{1} or
+#'   \code{"DNA Statement"}.
+#' @param variable The name of the variable that should be recast into a
+#'   different data type.
+#' @param simulate Should the changes only be simulated instead of actually
+#'   applied to the DNA connection and the SQL database? This can help to
+#'   plan more complex recode operations.
+#' @param verbose Print details about the recode operations?
+#'
+#' @export
+dna_recastVariable <- function(connection, statementType, variable, simulate, verbose) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(variable) || is.na(variable) || length(variable) != 1 || !is.character(variable)) {
+    stop("'variable' must be a character object of length 1.")
+  }
+  if (grepl("\\W", variable)) {
+    stop("'variable' must not contain any spaces. Only characters and numbers are allowed.")
+  }
+  if (is.null(simulate) || is.na(simulate) || !is.logical(simulate) || length(simulate != 1)) {
+    stop("'simulate' must be a logical value of length 1")
+  }
+  if (is.null(verbose) || is.na(verbose) || !is.logical(verbose) || length(verbose != 1)) {
+    stop("'verbose' must be a logical value of length 1")
+  }
+  .jcall(connection$dna_connection, "V", "recastVariable", statementType, variable, simulate, verbose)
 }
 
 #' Removes an attribute entry from the database
@@ -736,6 +1222,208 @@ dna_removeDocument <- function(connection,
          verbose)
 }
 
+#' Removes a statement from the database
+#'
+#' Removes a statement from the database based on its ID.
+#'
+#' The user provides a connection object and the ID of an existing statement in
+#' the DNA database, and this statement is removed both from memory and from the
+#' SQL database.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \link{dna_connection} function.
+#' @param id An integer value denoting the ID of the statement to be removed.
+#' The \link{dna_getStatements} function can be used to look up IDs.
+#' @param verbose Print details on whether the document could be removed?
+#'
+#' @author Philip Leifeld
+#' @export
+dna_removeStatement <- function(connection,
+                                id,
+                                verbose = TRUE) {
+  if (!is.integer(id)) {
+    if (is.numeric(id)) {
+      id <- as.integer(id)
+    } else {
+      stop("'id' must be a numeric or integer statement ID.")
+    }
+  }
+  .jcall(connection$dna_connection,
+         "V",
+         "removeStatement",
+         id,
+         verbose)
+}
+
+#' Remove a statement type from the database
+#'
+#' Remove a statement type from the database.
+#'
+#' Completely remove a statement type from the database, including all
+#' variables, attributes, and statements that are associated with the statement
+#' type.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type to be deleted. The statement type
+#'   can be supplied as an integer ID or character string, for example \code{1}
+#'   or \code{"DNA Statement"}.
+#' @param simulate Should the changes only be simulated instead of actually
+#'   applied to the DNA connection and the SQL database? This can help to
+#'   plan more complex recode operations.
+#' @param verbose Print details about the recode operations?
+#'
+#' @export
+dna_removeStatementType <- function(connection, statementType, simulate, verbose) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(simulate) || is.na(simulate) || !is.logical(simulate) || length(simulate != 1)) {
+    stop("'simulate' must be a logical value of length 1")
+  }
+  if (is.null(verbose) || is.na(verbose) || !is.logical(verbose) || length(verbose != 1)) {
+    stop("'verbose' must be a logical value of length 1")
+  }
+  .jcall(connection$dna_connection,
+         "V",
+         "removeStatementType",
+         statementType,
+         simulate,
+         verbose)
+}
+
+#' Add a new variable to a statement type in the database
+#'
+#' Add a new variable to a statement type in the database.
+#'
+#' Add a new variable to an existing statement type in the database, based on
+#' the statement type ID or label, a name for the new variable, and a data type
+#' specification.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type from which variable should be
+#'   deleted. The statement type can be supplied as an integer ID or character
+#'   string, for example \code{1} or \code{"DNA Statement"}.
+#' @param variable The name of the variable as a character object.
+#' @param simulate Should the changes only be simulated instead of actually
+#'   applied to the DNA connection and the SQL database? This can help to
+#'   plan more complex recode operations.
+#' @param verbose Print details about the recode operations?
+#'
+#' @examples
+#' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' dna_removeVariable(conn, 1, "person")
+#' }
+#'
+#' @export
+dna_removeVariable <- function(connection,
+                               statementType = 1,
+                               variable,
+                               simulate,
+                               verbose) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(variable) || is.na(variable) || length(variable) != 1 || !is.character(variable)) {
+    stop("'variable' must be a character object of length 1.")
+  }
+  if (is.null(simulate) || is.na(simulate) || !is.logical(simulate) || length(simulate != 1)) {
+    stop("'simulate' must be a logical value of length 1")
+  }
+  if (is.null(verbose) || is.na(verbose) || !is.logical(verbose) || length(verbose != 1)) {
+    stop("'verbose' must be a logical value of length 1")
+  }
+  .jcall(connection$dna_connection,
+         "V",
+         "removeVariable",
+         statementType,
+         variable,
+         simulate,
+         verbose)
+}
+
+#' Rename a statement type
+#'
+#' Rename a statement type by assigning a new label.
+#'
+#' This function renames a statement type by replacing its label with a new
+#' label.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type that should be renamed. The statement
+#' type can be supplied as an integer ID or character string, for example
+#' \code{1} or \code{"DNA Statement"}.
+#' @param label A descriptive new label for the statement type. For example
+#'   \code{"DNA Statement" or "My statement type"}. The label may contain
+#'   spaces.
+#'
+#' @export
+dna_renameStatementType <- function(connection, statementType, label) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(label) || is.na(label) || length(label) != 1 || !is.character(label)) {
+    stop("'label' must be a character object of length 1.")
+  }
+  .jcall(connection$dna_connection, "V", "renameStatementType", statementType, label)
+}
+
+#' Rename a variable
+#'
+#' Rename a variable by assigning a new label.
+#'
+#' This function renames a statement type by replacing its label with a new
+#' label.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statementType The statement type in which the variable is defined that
+#'   should be renamed. The statement type can be supplied as an integer ID or
+#'   character string, for example \code{1} or \code{"DNA Statement"}.
+#' @param variable The name of the variable that should be renamed.
+#' @param label A descriptive new label for the variable. For example
+#'   \code{"actor" or "intensity"}. The label must not contain spaces.
+#'
+#' @export
+dna_renameVariable <- function(connection, statementType, variable, label) {
+  if (is.null(statementType) || is.na(statementType) || length(statementType) != 1
+      || (!is.numeric(statementType) && !is.character(statementType))) {
+    stop("'statementType' must be an integer or character object of length 1.")
+  }
+  if (is.numeric(statementType) && !is.integer(statementType)) {
+    statementType <- as.integer(statementType)
+  }
+  if (is.null(variable) || is.na(variable) || length(variable) != 1 || !is.character(variable)) {
+    stop("'variable' must be a character object of length 1.")
+  }
+  if (grepl("\\W", variable)) {
+    stop("'variable' must not contain any spaces. Only characters and numbers are allowed.")
+  }
+  if (is.null(label) || is.na(label) || length(label) != 1 || !is.character(label)) {
+    stop("'label' must be a character object of length 1.")
+  }
+  if (grepl("\\W", label)) {
+    stop("'label' must not contain any spaces. Only characters and numbers are allowed.")
+  }
+  .jcall(connection$dna_connection, "V", "renameVariable", statementType, variable, label)
+}
+
 #' Recode attributes in the DNA database
 #'
 #' Add, remove, and edit values and attributes for a variable in a DNA database.
@@ -781,7 +1469,7 @@ dna_removeDocument <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' at <- dna_getAttributes(conn)
 #'
@@ -922,14 +1610,23 @@ dna_setAttributes <- function(connection,
 #'
 #' @param connection A \code{dna_connection} object created by the
 #'   \code{dna_connection} function.
-#' @param documents A dataframe with ten columns: id (integer), title
-#'   (character), text (character), coder (integer), author (character),
-#'   sources (character), section (character), notes (character), type
-#'   (character), and date (POSIXct or integer; if integer, the value
-#'   indicates milliseconds since the start of 1970-01-01). \code{NA} values
-#'   or \code{-1} values are permitted in the id column. If these are
-#'   encountered, a new ID is automatically generated, and the document is
-#'   added.
+#' @param documents A data frame with the following columns:
+#'   \enumerate{
+#'     \item id (integer - can be \code{NA} if a new statement is added),
+#'     \item title (character - the title of the document),
+#'     \item text (character - the document text),
+#'     \item coder (integer - ID of  the coder),
+#'     \item author (character - the document author),
+#'     \item source (character - the document source),
+#'     \item section (character - the document section),
+#'     \item notes (character - the document notes),
+#'     \item type (character - the document type),
+#'     \item date (POSIXct or integer; if integer, the value indicates
+#'     milliseconds since the start of 1970-01-01 - the document date/time).
+#'   }
+#'   \code{NA} values or \code{-1} values are permitted in the id column. If
+#'   these are encountered, a new ID is automatically generated, and the
+#'   document is added.
 #' @param removeStatements If a document is present in the DNA database but not
 #'   in the \code{documents} dataframe, the respective document is removed
 #'   from the database. However, the document may contain statements. If
@@ -944,13 +1641,13 @@ dna_setAttributes <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' documents <- dna_getDocuments(conn)
 #' documents$title[1] <- "New title for first document"
 #' documents$notes[3] <- "Added a note via rDNA."
-#' documents <- documents[, -5]# Removing the fifth document
-#' dna_setDocuments(conn, documents, simulate = TRUE)# apply changes
+#' documents <- documents[, -5] # removing the fifth document
+#' dna_setDocuments(conn, documents, simulate = TRUE) # apply changes
 #' }
 #'
 #' @author Philip Leifeld
@@ -964,71 +1661,107 @@ dna_setDocuments <- function(connection,
     stop("'documents' must be a data.frame similar to the one returned by dna_getDocuments.")
   }
   if (ncol(documents) != 10) {
-    stop("'documents' must be a data.frame with 10 columns.")
+    stop("'documents' must contain exactly ten columns. You can use the 'dna_getDocuments' function to create a template.")
+  }
+  if (colnames(documents)[1] != "id") {
+    stop("The first column of 'documents' must be called 'id' and contain the document IDs.")
   }
   if (!is.integer(documents[, 1])) {
-    stop("The first column of 'documents' must be integer and must contain the document IDs.")
+    if (is.numeric(documents[, 1])) {
+      documents[, 1] <- as.integer(documents[, 1])
+    } else {
+      stop("'documents$id' must contain integer values.")
+    }
+  }
+  if (colnames(documents)[2] != "title") {
+    stop("The second column of 'documents' must be called 'title' and contain the document titles.")
   }
   if (!is.character(documents[, 2])) {
     if (is.factor(documents[, 2])) {
       documents[, 2] <- as.character(documents[, 2])
     } else {
-      stop("The second column of 'documents' must contain the document titles as character objects.")
+      stop("'documents$title' must contain character objects.")
     }
+  }
+  if (colnames(documents)[3] != "text") {
+    stop("The third column of 'documents' must be called 'text' and contain the document texts.")
   }
   if (!is.character(documents[, 3])) {
     if (is.factor(documents[, 3])) {
       documents[, 3] <- as.character(documents[, 3])
     } else {
-      stop("The third column of 'documents' must contain the document texts as character objects.")
+      stop("'documents$text' must contain character objects.")
     }
   }
-  if (!is.numeric(documents[, 4])) {
-    stop("The fourth column of 'documents' must contain the coder IDs as integer values (see dna_getCoders).")
-  } else if (!is.integer(documents[, 4])) {
-    documents[, 4] <- as.integer(documents[, 4])
+  if (colnames(documents)[4] != "coder") {
+    stop("The fourth column of 'documents' must be called 'coder' and contain the coder IDs.")
+  }
+  if (!is.integer(documents[, 4])) {
+    if (is.numeric(documents[, 4])) {
+      documents[, 4] <- as.integer(documents[, 4])
+    } else {
+      stop("'documents$coder' must contain integer values.")
+    }
+  }
+  if (colnames(documents)[5] != "author") {
+    stop("The fifth column of 'documents' must be called 'author' and contain the document author.")
   }
   if (!is.character(documents[, 5])) {
     if (is.factor(documents[, 5])) {
       documents[, 5] <- as.character(documents[, 5])
     } else {
-      stop("The fifth column of 'documents' must contain the document authors as character objects.")
+      stop("'documents$author' must contain character objects.")
     }
+  }
+  if (colnames(documents)[6] != "source") {
+    stop("The sixth column of 'documents' must be called 'source' and contain the document source.")
   }
   if (!is.character(documents[, 6])) {
     if (is.factor(documents[, 6])) {
       documents[, 6] <- as.character(documents[, 6])
     } else {
-      stop("The sixth column of 'documents' must contain the document sources as character objects.")
+      stop("'documents$source' must contain character objects.")
     }
+  }
+  if (colnames(documents)[7] != "section") {
+    stop("The seventh column of 'documents' must be called 'section' and contain the document section.")
   }
   if (!is.character(documents[, 7])) {
     if (is.factor(documents[, 7])) {
       documents[, 7] <- as.character(documents[, 7])
     } else {
-      stop("The seventh column of 'documents' must contain the document sections as character objects.")
+      stop("'documents$section' must contain character objects.")
     }
+  }
+  if (colnames(documents)[8] != "notes") {
+    stop("The eighth column of 'documents' must be called 'notes' and contain the document notes.")
   }
   if (!is.character(documents[, 8])) {
     if (is.factor(documents[, 8])) {
       documents[, 8] <- as.character(documents[, 8])
     } else {
-      stop("The eighth column of 'documents' must contain the document notes as character objects.")
+      stop("'documents$notes' must contain character objects.")
     }
+  }
+  if (colnames(documents)[9] != "type") {
+    stop("The ninth column of 'documents' must be called 'type' and contain the document type.")
   }
   if (!is.character(documents[, 9])) {
     if (is.factor(documents[, 9])) {
       documents[, 9] <- as.character(documents[, 9])
     } else {
-      stop("The ninth column of 'documents' must contain the document types as character objects.")
+      stop("'documents$type' must contain character objects.")
     }
+  }
+  if (colnames(documents)[10] != "date") {
+    stop("The tenth column of 'documents' must be called 'date' and contain the document date/time.")
   }
   if (any(class(documents[, 10]) %in% c("POSIXct", "POSIXt"))) {
     documents[, 10] <- .jlong(as.integer(documents[, 10]) * 1000)
   } else if (is.numeric(documents[, 10])) {
     documents[, 10] <- .jlong(as.integer(documents[, 10]))
   } else {
-    stop("The tenth column of 'documents' must contain the document dates as POSIXct objects or as numeric objects indicating milliseconds since 1970-01-01.")
+    stop("'documents$date' must contain the document dates as POSIXct objects or as numeric objects indicating milliseconds since 1970-01-01.")
   }
   if (verbose == TRUE) {
     if (nrow(documents) == 0) {
@@ -1045,6 +1778,189 @@ dna_setDocuments <- function(connection,
          "setDocuments",
          documents,
          removeStatements,
+         simulate,
+         verbose)
+}
+
+#' Recode statements in the DNA database
+#'
+#' Recode statements in a DNA database.
+#'
+#' This function takes a dataframe with columns "id", "documentId",
+#' "startCaret", "endCaret", "statementTypeId", "coder", and addition columns
+#' for the variables of the respective statement type, as returned by the
+#' \link{dna_getStatements} function, and hands it over to a DNA connection in
+#' order to update the statements in the database based on the contents of the
+#' dataframe. The typical workflow is to retrieve the statements using
+#' \link{dna_getStatements}, manipulate the statements in the data frame, and
+#' then apply the changes with \link{dna_setStatements}. Statements that are no
+#' longer in the data frame are removed from the database; statements in the
+#' data frame that are not in the database are added to the database; and
+#' contents of existing statements are updated. By default, the changes are only
+#' simulated and not actually written into the database. The user can inspect
+#' the reported changes and then apply the actual changes by setting
+#' \code{simulate = FALSE}. If attributes for any of the variables are affected,
+#' they are renamed or added if there is no other instance in the database. Note
+#' that the removal or update of statements does not automatically remove any
+#' attributes. See \link{dna_removeAttribute} and \link{dna_setAttributes} for
+#' this purpose.
+#'
+#' @param connection A \code{dna_connection} object created by the
+#'   \code{dna_connection} function.
+#' @param statements A data frame with the following columns:
+#'   \enumerate{
+#'     \item id (integer - can be \code{NA} if a new statement is added),
+#'     \item documentId (integer - needs to refer to an existing document ID),
+#'     \item startCaret (integer - the start position of the statement in the
+#'     text as a character count, starting at 0 for the first character in the
+#'     document),
+#'     \item endCaret (integer - the end position of the statement in the text
+#'     as a character count, where for example a value of 1 would indicate that
+#'     the statement ends after the first character in the document),
+#'     \item statementTypeId (integer - ID of the corresponding statement type),
+#'     \item coder (integer - ID of the coder),
+#'     \item additional columns for the respective variable, such as
+#'     organization, concept, agreement, etc.
+#'   }
+#'   \code{NA} values or \code{-1} values are permitted in the id column. If
+#'   these are encountered, a new ID is automatically generated, and the
+#'   statement is added.
+#' @param simulate Should the changes only be simulated instead of actually
+#'   applied to the DNA connection and the SQL database? This can help to
+#'   plan more complex recode operations.
+#' @param verbose Print details about the recode operations?
+#'
+#' @examples
+#' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' statements <- dna_getStatements(conn)
+#' statements$organization[1] <- "New actor for first statement"
+#' statements$concept[3] <- "New concept for the third statement"
+#' statements <- statements[, -5] # removing the fifth statement
+#' dna_setStatements(conn, statements, simulate = TRUE) # apply changes
+#' }
+#'
+#' @author Philip Leifeld
+#' @export
+dna_setStatements <- function(connection,
+                              statements,
+                              simulate = TRUE,
+                              verbose = TRUE) {
+  if (!is.data.frame(statements)) {
+    stop("'statements' must be a data.frame similar to the one returned by dna_getStatements.")
+  }
+  if (ncol(statements) < 6) {
+    stop("'statements' must contain at least six columns. You can use the 'dna_getStatements' function to create a template.")
+  }
+  if (colnames(statements)[1] != "id") {
+    stop("The first column of 'statements' must be called 'id' and contain the statement IDs.")
+  }
+  if (!is.integer(statements[, 1])) {
+    if (is.numeric(statements[, 1])) {
+      statements[, 1] <- as.integer(statements[, 1])
+    } else {
+      stop("'statements$id' must contain integer values.")
+    }
+  }
+  if (colnames(statements)[2] != "documentId") {
+    stop("The second column of 'statements' must be called 'documentId' and contain the document IDs.")
+  }
+  if (!is.integer(statements[, 2])) {
+    if (is.numeric(statements[, 2])) {
+      statements[, 2] <- as.integer(statements[, 2])
+    } else {
+      stop("'statements$documentId' must contain integer values.")
+    }
+  }
+  if (colnames(statements)[3] != "startCaret") {
+    stop("The third column of 'statements' must be called 'startCaret' and contain the start position of the statement in the text.")
+  }
+  if (!is.integer(statements[, 3])) {
+    if (is.numeric(statements[, 3])) {
+      statements[, 3] <- as.integer(statements[, 3])
+    } else {
+      stop("'statements$startCaret' must contain integer values.")
+    }
+  }
+  if (colnames(statements)[4] != "endCaret") {
+    stop("The fourth column of 'statements' must be called 'endCaret' and contain the end position of the statement in the text.")
+  }
+  if (!is.integer(statements[, 4])) {
+    if (is.numeric(statements[, 4])) {
+      statements[, 4] <- as.integer(statements[, 4])
+    } else {
+      stop("'statements$endCaret' must contain integer values.")
+    }
+  }
+  if (colnames(statements)[5] != "statementTypeId") {
+    stop("The fifth column of 'statements' must be called 'statementTypeId' and contain the statement type IDs.")
+  }
+  if (!is.integer(statements[, 5])) {
+    if (is.numeric(statements[, 5])) {
+      statements[, 5] <- as.integer(statements[, 5])
+    } else {
+      stop("'statements$statementTypeId' must contain integer values.")
+    }
+  }
+  if (colnames(statements)[6] != "coder") {
+    stop("The sixth column of 'statements' must be called 'coder' and contain the coder IDs.")
+  }
+  if (!is.integer(statements[, 6])) {
+    if (is.numeric(statements[, 6])) {
+      statements[, 6] <- as.integer(statements[, 6])
+    } else {
+      stop("'statements$coder' must contain integer values.")
+    }
+  }
+
+  # check validity of variables
+  variables <- J(connection$dna_connection, "getVariables", as.integer(statements$statementTypeId[1]))
+  variables <- lapply(variables, .jevalArray)
+  variables <- as.data.frame(variables, stringsAsFactors = FALSE)
+  colnames(variables) <- c("variable", "type")
+  for (i in 1:nrow(variables)) {
+    if (variables[i, 2] == "boolean") {
+      if (is.integer(statements[, 6 + i])) {
+        # fine
+      } else if (is.numeric(statements[, 6 + i]) || is.logical(statements[, 6 + i])) {
+        statements[, 6 + i] <- as.integer(statements[, 6 + i])
+      } else {
+        stop(paste0("'statements$`", variables[i, 1], "`' must contain only binary values (0 or 1)."))
+      }
+      if (!all(statements[, 6 + i] %in% 0:1)) {
+        stop(paste0("'statements$`", variables[i, 1], "`' must contain only binary values (0 or 1)."))
+      }
+    } else if (variables[i, 2] == "integer") {
+      if (is.integer(statements[, 6 + i])) {
+        # fine
+      } else if (is.numeric(statements[, 6 + i]) || is.logical(statements[, 6 + i])) {
+        statements[, 6 + i] <- as.integer(statements[, 6 + i])
+      } else {
+        stop(paste0("'statements$`", variables[i, 1], "`' must contain integer values."))
+      }
+    } else {
+      if (!is.character(statements[, 6 + i])) {
+        statements[, 6 + i] <- as.character(statements[, 6 + i])
+      }
+      statements[, 6 + i][is.na(statements[, 6 + i])] <- ""
+    }
+  }
+
+  if (verbose == TRUE && nrow(statements) == 0) {
+    warning("'statements' has 0 rows. Deleting all statements from the database.")
+  }
+
+  # replace NAs with -1, which will be replaced by an auto-generated ID in DNA
+  if (any(is.na(statements[, 1]))) {
+    statements[which(is.na(statements[, 1])), 1] <- as.integer(-1)
+  }
+
+  statements <- .jarray(lapply(statements, .jarray))
+  .jcall(connection$dna_connection,
+         "V",
+         "setStatements",
+         statements,
          simulate,
          verbose)
 }
@@ -1122,8 +2038,7 @@ dna_setDocuments <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
 #' clust.l <- dna_cluster(conn)
@@ -1429,8 +2344,7 @@ dna_cluster <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample(), verbose = FALSE)
 #' clust.l <- dna_cluster(conn)
 #' clust.l
@@ -1468,70 +2382,70 @@ print.dna_cluster <- function(x, ...) {
 
 #' One-dimensional binary scaling from a DNA connection
 #'
-#' Scale ideological positions of two variables (e.g., organizations and 
-#' concepts) from a DNA connection by using Markov Chain Monte Carlo for binary 
-#' one-dimensional Item Response Theory. This is one of the four scaling 
-#' functions. For one-dimensional ordinal scaling, see \link{dna_scale1dord}, 
-#' for two-dimensional binary scaling, see \link{dna_scale2dbin} and for 
+#' Scale ideological positions of two variables (e.g., organizations and
+#' concepts) from a DNA connection by using Markov Chain Monte Carlo for binary
+#' one-dimensional Item Response Theory. This is one of the four scaling
+#' functions. For one-dimensional ordinal scaling, see \link{dna_scale1dord},
+#' for two-dimensional binary scaling, see \link{dna_scale2dbin} and for
 #' two-dimensional ordinal scaling \link{dna_scale2dord}.
 #'
-#' This function is a convenience wrapper for the \link[MCMCpack]{MCMCirt1d} 
-#' function. Using Markov Chain Monte Carlo (MCMC), \code{dna_scale1dbin} 
-#' generates a sample from the posterior distribution using standard Gibbs 
-#' sampling. For the model form and further help for the scaling arguments, see 
+#' This function is a convenience wrapper for the \link[MCMCpack]{MCMCirt1d}
+#' function. Using Markov Chain Monte Carlo (MCMC), \code{dna_scale1dbin}
+#' generates a sample from the posterior distribution using standard Gibbs
+#' sampling. For the model form and further help for the scaling arguments, see
 #' \link[MCMCpack]{MCMCirt1d}.
-#' 
-#' As in a two-mode network in \link{dna_network}, two variables have to be 
-#' provided for the scaling. The first variable corresponds to the rows of a 
-#' two-mode network and usually entails actors (e.g., \code{"organizations"}), 
-#' while the second variable is equal to the columns of a two-mode network, 
-#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions 
-#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1} 
-#' and \code{variable2}. However, the scaling is not restricted to 
-#' \code{"actors"} and \code{"concepts"} but depends on what you provide in 
+#'
+#' As in a two-mode network in \link{dna_network}, two variables have to be
+#' provided for the scaling. The first variable corresponds to the rows of a
+#' two-mode network and usually entails actors (e.g., \code{"organizations"}),
+#' while the second variable is equal to the columns of a two-mode network,
+#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions
+#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1}
+#' and \code{variable2}. However, the scaling is not restricted to
+#' \code{"actors"} and \code{"concepts"} but depends on what you provide in
 #' \code{variable1} or \code{variable2}.
-#' 
-#' For a binary qualifier, \code{dna_scale1dbin} internally uses the 
-#' \code{combine} qualifier aggregation and then recodes the values into 
-#' \code{0} for disagreement, \code{1} for agreement and \code{NA} for mixed 
-#' positions and non-mentions of concepts. Integer qualifiers are also recoded 
-#' into \code{0} and \code{1} by rescaling the qualifier values between 
-#' \code{0} and \code{1}. You can further relax the recoding of \code{NA} values by setting a 
-#' \code{threshold} which lets you decide at which percentage of agreement and 
-#' disagreement an actor position on a concept can be considered as 
-#' agreement/disagreement or mixed position.  
-#' 
-#' The argument \code{drop_min_actors} excludes actors with only a limited 
-#' number of concepts used. Limited participation of actors in a debate can 
-#' impact the scaling of the ideal points, as actors with only few mentions of 
-#' concepts convey limited information on their ideological position. The same 
-#' can also be done for concepts with the argument \code{drop_min_concepts}. 
+#'
+#' For a binary qualifier, \code{dna_scale1dbin} internally uses the
+#' \code{combine} qualifier aggregation and then recodes the values into
+#' \code{0} for disagreement, \code{1} for agreement and \code{NA} for mixed
+#' positions and non-mentions of concepts. Integer qualifiers are also recoded
+#' into \code{0} and \code{1} by rescaling the qualifier values between
+#' \code{0} and \code{1}. You can further relax the recoding of \code{NA} values by setting a
+#' \code{threshold} which lets you decide at which percentage of agreement and
+#' disagreement an actor position on a concept can be considered as
+#' agreement/disagreement or mixed position.
+#'
+#' The argument \code{drop_min_actors} excludes actors with only a limited
+#' number of concepts used. Limited participation of actors in a debate can
+#' impact the scaling of the ideal points, as actors with only few mentions of
+#' concepts convey limited information on their ideological position. The same
+#' can also be done for concepts with the argument \code{drop_min_concepts}.
 #' Concepts that have been rarely mentioned do not strongly discriminate the
-#' ideological positions of actors and can, therefore, impact the accuracy of 
-#' the scaling. Reducing the number of actors of concepts to be scaled hence 
-#' improves the precision of the ideological positions for both variables and 
-#' the scaling itself. Another possibility to reduce the number of concepts is 
-#' to use \code{drop_constant_concepts}, which will reduce concepts not having 
-#' any variation in the agreement/disagreement structure of actors. This means 
-#' that all concepts will be dropped which have only agreeing or disagreeing 
+#' ideological positions of actors and can, therefore, impact the accuracy of
+#' the scaling. Reducing the number of actors of concepts to be scaled hence
+#' improves the precision of the ideological positions for both variables and
+#' the scaling itself. Another possibility to reduce the number of concepts is
+#' to use \code{drop_constant_concepts}, which will reduce concepts not having
+#' any variation in the agreement/disagreement structure of actors. This means
+#' that all concepts will be dropped which have only agreeing or disagreeing
 #' statements.
 #'
-#' As \code{dna_scale1dbin} implements a Bayesian Item Response Theory 
-#' approach, \code{priors} and \code{starting values} can be set on the actor 
-#' and concept parameters. Changing the default \code{prior} values can often 
-#' help you to achieve better results. Constraints on the actor parameters can 
-#' also be specified to help identifying the model and to indicate in which 
-#' direction ideological positions of actors and concepts run. The returned 
-#' MCMC output can also be post-processed by normalizing the samples for each 
+#' As \code{dna_scale1dbin} implements a Bayesian Item Response Theory
+#' approach, \code{priors} and \code{starting values} can be set on the actor
+#' and concept parameters. Changing the default \code{prior} values can often
+#' help you to achieve better results. Constraints on the actor parameters can
+#' also be specified to help identifying the model and to indicate in which
+#' direction ideological positions of actors and concepts run. The returned
+#' MCMC output can also be post-processed by normalizing the samples for each
 #' iteration with \code{mcmc_normalize}. Normalization can be a sufficient
 #' way of identifying one-dimensional ideal point models.
 #'
 #' To plot the resulting ideal points of actors and concepts, you can use the
-#' \link{dna_plotScale} function. To assess if the returned MCMC chain has 
-#' converged to its stationary distribution, please use 
-#' \link{dna_convergenceScale}. The evaluation of convergence is essential to 
-#' report conclusions based on accurate parameter estimates. Achieving chain 
-#' convergence often requires setting the iterations of the MCMC chain to 
+#' \link{dna_plotScale} function. To assess if the returned MCMC chain has
+#' converged to its stationary distribution, please use
+#' \link{dna_convergenceScale}. The evaluation of convergence is essential to
+#' report conclusions based on accurate parameter estimates. Achieving chain
+#' convergence often requires setting the iterations of the MCMC chain to
 #' several million.
 #'
 #' @param connection A \code{dna_connection} object created by the
@@ -1542,85 +2456,87 @@ print.dna_cluster <- function(x, ...) {
 #'   \link{dna_network}). Defaults to \code{"concept"}.
 #' @param qualifier The qualifier variable for the scaling construction (see
 #'   \link{dna_network}). Defaults to \code{"agreement"}.
-#' @param threshold Numeric value that specifies when a mixed position can be 
-#'   considered as agreement or disagreement. If e.g. one actor has 60 percent 
-#'   of agreeing and 40 percent of disagreeing statements towards a concept, a 
-#'   \code{threshold} of 0.51 will recode the actor position on this concept as 
-#'   "agreement". The same accounts also for disagreeing statements. If one 
-#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements,  
-#'   a \code{threshold} of 0.51 will recode the actor position on this concept 
-#'   as "disagreement". All values in between the \code{threshold} (e.g., 55 
-#'   percent agreement and 45 percent of disagreement and a threshold of 0.6) 
-#'   will be recoded as \code{NA}. If is set to \code{NULL}, all "mixed"  
-#'   positions of actors will be recoded as \code{NA}. Must be strictly 
+#' @param threshold Numeric value that specifies when a mixed position can be
+#'   considered as agreement or disagreement. If e.g. one actor has 60 percent
+#'   of agreeing and 40 percent of disagreeing statements towards a concept, a
+#'   \code{threshold} of 0.51 will recode the actor position on this concept as
+#'   "agreement". The same accounts also for disagreeing statements. If one
+#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements,
+#'   a \code{threshold} of 0.51 will recode the actor position on this concept
+#'   as "disagreement". All values in between the \code{threshold} (e.g., 55
+#'   percent agreement and 45 percent of disagreement and a threshold of 0.6)
+#'   will be recoded as \code{NA}. If is set to \code{NULL}, all "mixed"
+#'   positions of actors will be recoded as \code{NA}. Must be strictly
 #'   positive.
-#' @param theta_constraints A list specifying the constraints on the actor 
-#'   parameter. Three forms of constraints are possible: 
-#'   \code{actorname = value}, which will constrain an actor to be equal to the 
-#'   specified value (e.g. \code{0}), \code{actorname = "+"}, which will 
-#'   constrain the actor to be positively scaled and \code{actorname = "-"}, 
+#' @param theta_constraints A list specifying the constraints on the actor
+#'   parameter. Three forms of constraints are possible:
+#'   \code{actorname = value}, which will constrain an actor to be equal to the
+#'   specified value (e.g. \code{0}), \code{actorname = "+"}, which will
+#'   constrain the actor to be positively scaled and \code{actorname = "-"},
 #'   which will constrain the actor to be negatively scaled (see example).
 #' @param mcmc_iterations The number of iterations for the sampler.
 #' @param mcmc_burnin The number of burn-in iterations for the sampler.
-#' @param mcmc_thin The thinning interval for the sampler. Iterations must be 
+#' @param mcmc_thin The thinning interval for the sampler. Iterations must be
 #'   divisible by the thinning interval.
-#' @param mcmc_normalize Logical. Should the MCMC output be normalized? If 
-#'   \code{TRUE}, samples are normalized to a mean of \code{0} and a standard 
+#' @param mcmc_normalize Logical. Should the MCMC output be normalized? If
+#'   \code{TRUE}, samples are normalized to a mean of \code{0} and a standard
 #'   deviation of \code{1}.
-#' @param theta_start The \code{starting values} for the actor parameters. Can 
-#'   either be a scalar or a column vector with as many elements as the number 
-#'   of actors included in the scaling. If set to the default \code{NA}, 
-#'   \code{starting values} will be set according to an eigenvalue-eigenvector 
+#' @param theta_start The \code{starting values} for the actor parameters. Can
+#'   either be a scalar or a column vector with as many elements as the number
+#'   of actors included in the scaling. If set to the default \code{NA},
+#'   \code{starting values} will be set according to an eigenvalue-eigenvector
 #'   decomposition of the actor agreement score.
-#' @param alpha_start The \code{starting values} for the concept difficulty 
-#'   parameters. Can either be a scalar or a column vector with as many 
-#'   elements as the number of actors included in the scaling. If set to the 
-#'   default \code{NA}, \code{starting values} will be set according to a 
-#'   series of probit regressions that condition the starting values of the 
+#' @param alpha_start The \code{starting values} for the concept difficulty
+#'   parameters. Can either be a scalar or a column vector with as many
+#'   elements as the number of actors included in the scaling. If set to the
+#'   default \code{NA}, \code{starting values} will be set according to a
+#'   series of probit regressions that condition the starting values of the
 #'   difficulty parameters.
-#' @param beta_start The \code{starting values} for the concept discrimination 
-#'   parameters. Can either be a scalar or a column vector with as many 
-#'   elements as the number of actors included in the scaling. If set to the 
-#'   default \code{NA}, \code{starting values} will be set according to a 
-#'   series of probit regressions that condition the \code{starting values} of 
+#' @param beta_start The \code{starting values} for the concept discrimination
+#'   parameters. Can either be a scalar or a column vector with as many
+#'   elements as the number of actors included in the scaling. If set to the
+#'   default \code{NA}, \code{starting values} will be set according to a
+#'   series of probit regressions that condition the \code{starting values} of
 #'   the discrimination parameters.
-#' @param theta_prior_mean A scalar value specifying the prior mean of the 
+#' @param theta_prior_mean A scalar value specifying the prior mean of the
 #'   actor parameters.
-#' @param theta_prior_variance A scalar value specifying the prior inverse 
+#' @param theta_prior_variance A scalar value specifying the prior inverse
 #'   variances of the actor parameters.
-#' @param alpha_beta_prior_mean Mean of the difficulty and discrimination 
-#'   parameters. Can either be a scalar or a 2-vector. If a scalar, both means 
+#' @param alpha_beta_prior_mean Mean of the difficulty and discrimination
+#'   parameters. Can either be a scalar or a 2-vector. If a scalar, both means
 #'   will be set according to the specified value.
-#' @param alpha_beta_prior_variance Inverse variance of the difficulty and 
-#'   discrimination parameters. Can either be a scalar or a 2-vector. If a 
+#' @param alpha_beta_prior_variance Inverse variance of the difficulty and
+#'   discrimination parameters. Can either be a scalar or a 2-vector. If a
 #'   scalar, both means will be set according to the specified value.
-#' @param store_variables A character vector indicating which variables should 
-#'   be stored from the scaling. Can either take the value of the character 
-#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"} 
-#'   to store both variables. Note that saving both variables can impact the 
+#' @param store_variables A character vector indicating which variables should
+#'   be stored from the scaling. Can either take the value of the character
+#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"}
+#'   to store both variables. Note that saving both variables can impact the
 #'   speed of the scaling. Defaults to \code{"both"}.
-#' @param drop_constant_concepts Logical. Should concepts that have no 
+#' @param drop_constant_concepts Logical. Should concepts that have no
 #'   variation be deleted before the scaling? Defaults to \code{FALSE}.
-#' @param drop_min_actors A numeric value specifying the minimum number of 
-#'   concepts actors should have mentioned to be included in the scaling. 
+#' @param drop_min_actors A numeric value specifying the minimum number of
+#'   concepts actors should have mentioned to be included in the scaling.
 #'   Defaults to \code{1}.
-#' @param drop_min_concepts A numeric value specifying the minimum number a 
+#' @param drop_min_concepts A numeric value specifying the minimum number a
 #'   concept should have been jointly mentioned by actors. Defaults to \code{2}.
-#' @param verbose A boolean or numeric value indicating whether the iterations 
-#'   of the scaling should be printed to the R console. If set to a numeric 
-#'   value, every \code{verboseth} iteration will be printed. If set to 
-#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in 
+#' @param verbose A boolean or numeric value indicating whether the iterations
+#'   of the scaling should be printed to the R console. If set to a numeric
+#'   value, every \code{verboseth} iteration will be printed. If set to
+#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in
 #'   divided by \code{100}.
 #' @param seed The random seed for the scaling.
-#' @param ... Additional arguments passed to \link{dna_network}. Actors can 
-#'   e.g. be removed with the \code{excludeValues} arguments. The scaling can 
-#'   also be applied to a specific time slice by using \code{start.date} and 
+#' @param ... Additional arguments passed to \link{dna_network}. Actors can
+#'   e.g. be removed with the \code{excludeValues} arguments. The scaling can
+#'   also be applied to a specific time slice by using \code{start.date} and
 #'   \code{stop.date}.
-#' 
+#'
 #' @examples
 #' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
 #' dna_scale <- dna_scale1dbin(
-#'   connection,
+#'   conn,
 #'   variable1 = "organization",
 #'   variable2 = "concept",
 #'   qualifier = "agreement",
@@ -1786,75 +2702,75 @@ dna_scale1dbin <- function(connection,
 
 #' One-dimensional ordinal scaling from a DNA connection.
 #'
-#' Scale ideological positions of two variables (e.g., organizations and 
-#' concepts) from a DNA connection by using Markov Chain Monte Carlo for 
-#' ordinal one-dimensional Item Response Theory. This is one of the four 
-#' scaling functions. For one-dimensional binary scaling, see 
-#' \link{dna_scale1dbin}, for two-dimensional binary scaling, see 
-#' \link{dna_scale2dbin} and for two-dimensional ordinal scaling 
+#' Scale ideological positions of two variables (e.g., organizations and
+#' concepts) from a DNA connection by using Markov Chain Monte Carlo for
+#' ordinal one-dimensional Item Response Theory. This is one of the four
+#' scaling functions. For one-dimensional binary scaling, see
+#' \link{dna_scale1dbin}, for two-dimensional binary scaling, see
+#' \link{dna_scale2dbin} and for two-dimensional ordinal scaling
 #' \link{dna_scale2dord}.
 #'
-#' This function is a convenience wrapper for the 
-#' \link[MCMCpack]{MCMCordfactanal} function. Using Markov Chain Monte Carlo 
-#' (MCMC), \code{dna_scale1dord} generates a sample from the posterior 
+#' This function is a convenience wrapper for the
+#' \link[MCMCpack]{MCMCordfactanal} function. Using Markov Chain Monte Carlo
+#' (MCMC), \code{dna_scale1dord} generates a sample from the posterior
 #' distribution of an ordinal data factor analysis model, using a
-#' Metropolis-Hastings within Gibbs sampling algorithm. For the model form and 
+#' Metropolis-Hastings within Gibbs sampling algorithm. For the model form and
 #' further help for the scaling arguments, see \link[MCMCpack]{MCMCordfactanal}.
-#' 
-#' As in a two-mode network in \link{dna_network}, two variables have to be 
-#' provided for the scaling. The first variable corresponds to the rows of a 
-#' two-mode network and usually entails actors (e.g., \code{"organizations"}), 
-#' while the second variable is equal to the columns of a two-mode network, 
-#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions 
-#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1} 
-#' and \code{variable2}. However, the scaling is not restricted to 
-#' \code{"actors"} and \code{"concepts"} but depends on what you provide in 
+#'
+#' As in a two-mode network in \link{dna_network}, two variables have to be
+#' provided for the scaling. The first variable corresponds to the rows of a
+#' two-mode network and usually entails actors (e.g., \code{"organizations"}),
+#' while the second variable is equal to the columns of a two-mode network,
+#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions
+#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1}
+#' and \code{variable2}. However, the scaling is not restricted to
+#' \code{"actors"} and \code{"concepts"} but depends on what you provide in
 #' \code{variable1} or \code{variable2}.
-#' 
-#' \code{dna_scale1dord} internally uses the \code{combine} qualifier 
-#' aggregation and then recodes the values into \code{1} for disagreement, 
-#' \code{2} for mixed positions and \code{3} for agreement. Integer qualifiers 
-#' are not recoded. When \code{zero_is_na} is set to \code{TRUE}, non-mentions 
-#' of concepts are set to \code{NA}, while setting the argument to \code{FALSE} 
-#' recodes them to \code{2} as mixed position. By setting a \code{threshold}, 
+#'
+#' \code{dna_scale1dord} internally uses the \code{combine} qualifier
+#' aggregation and then recodes the values into \code{1} for disagreement,
+#' \code{2} for mixed positions and \code{3} for agreement. Integer qualifiers
+#' are not recoded. When \code{zero_is_na} is set to \code{TRUE}, non-mentions
+#' of concepts are set to \code{NA}, while setting the argument to \code{FALSE}
+#' recodes them to \code{2} as mixed position. By setting a \code{threshold},
 #' you can further decide at which percentage of agreement and disagreement
-#' an actor position on a concept can be considered as agreement/disagreement 
+#' an actor position on a concept can be considered as agreement/disagreement
 #' or mixed position.
-#' 
-#' The argument \code{drop_min_actors} excludes actors with only a limited 
-#' number of concepts used. Limited participation of actors in a debate can 
-#' impact the scaling of the ideal points, as actors with only few mentions of 
-#' concepts convey limited information on their ideological position. The same 
-#' can also be done for concepts with the argument \code{drop_min_concepts}. 
+#'
+#' The argument \code{drop_min_actors} excludes actors with only a limited
+#' number of concepts used. Limited participation of actors in a debate can
+#' impact the scaling of the ideal points, as actors with only few mentions of
+#' concepts convey limited information on their ideological position. The same
+#' can also be done for concepts with the argument \code{drop_min_concepts}.
 #' Concepts that have been rarely mentioned do not strongly discriminate the
 #' ideological positions of actors and can, therefore, impact the accuracy of the
-#' scaling. Reducing the number of actors of concepts to be scaled hence 
-#' improves the precision of the ideological positions for both variables and 
-#' the scaling itself. Another possibility to reduce the number of concepts is 
-#' to use \code{drop_constant_concepts}, which will reduce concepts not having 
-#' any variation in the agreement/disagreement structure of actors. This means 
-#' that all concepts will be dropped which have only agreeing, disagreeing or 
+#' scaling. Reducing the number of actors of concepts to be scaled hence
+#' improves the precision of the ideological positions for both variables and
+#' the scaling itself. Another possibility to reduce the number of concepts is
+#' to use \code{drop_constant_concepts}, which will reduce concepts not having
+#' any variation in the agreement/disagreement structure of actors. This means
+#' that all concepts will be dropped which have only agreeing, disagreeing or
 #' mixed statements.
 #'
-#' As \code{dna_scale1dord} implements a Bayesian Item Response Theory 
-#' approach, \code{priors} and \code{starting values} can be set on the concept 
-#' parameters. Changing the default \code{prior} values can often help you to 
-#' achieve better results. Constraints on the concept parameters can also be 
-#' specified to help identifying the model and to indicate in which direction 
-#' ideological positions of actors and concepts run. The scaling estimates an 
-#' item discrimination parameter and an item difficulty parameter for each 
-#' concept. We advise constraining the item discrimination parameter, as the 
-#' item difficulty parameter, in general, should not be constrained. The 
+#' As \code{dna_scale1dord} implements a Bayesian Item Response Theory
+#' approach, \code{priors} and \code{starting values} can be set on the concept
+#' parameters. Changing the default \code{prior} values can often help you to
+#' achieve better results. Constraints on the concept parameters can also be
+#' specified to help identifying the model and to indicate in which direction
+#' ideological positions of actors and concepts run. The scaling estimates an
+#' item discrimination parameter and an item difficulty parameter for each
+#' concept. We advise constraining the item discrimination parameter, as the
+#' item difficulty parameter, in general, should not be constrained. The
 #' returned MCMC output can also be post-processed by normalizing the samples
-#' for each iteration with \code{mcmc_normalize}. Normalization can be a 
+#' for each iteration with \code{mcmc_normalize}. Normalization can be a
 #' sufficient way of identifying one-dimensional ideal point models.
 #'
 #' To plot the resulting ideal points of actors and concepts, you can use the
-#' \link{dna_plotScale} function. To assess if the returned MCMC chain has 
-#' converged to its stationary distribution, please use 
-#' \link{dna_convergenceScale}. The evaluation of convergence is essential to 
-#' report conclusions based on accurate parameter estimates. Achieving chain 
-#' convergence often requires setting the iterations of the MCMC chain to 
+#' \link{dna_plotScale} function. To assess if the returned MCMC chain has
+#' converged to its stationary distribution, please use
+#' \link{dna_convergenceScale}. The evaluation of convergence is essential to
+#' report conclusions based on accurate parameter estimates. Achieving chain
+#' convergence often requires setting the iterations of the MCMC chain to
 #' several million.
 #'
 #' @param connection A \code{dna_connection} object created by the
@@ -1865,80 +2781,82 @@ dna_scale1dbin <- function(connection,
 #'   \link{dna_network}). Defaults to \code{"concept"}.
 #' @param qualifier The qualifier variable for the scaling construction (see
 #'   \link{dna_network}). Defaults to \code{"agreement"}.
-#' @param zero_as_na Logical. If \code{TRUE}, all non-mentions of an actor 
-#'   towards a concept will be recoded as \code{NA}. If \code{FALSE} as 
+#' @param zero_as_na Logical. If \code{TRUE}, all non-mentions of an actor
+#'   towards a concept will be recoded as \code{NA}. If \code{FALSE} as
 #'   \code{2}.
-#' @param threshold Numeric value that specifies when a mixed position can be 
-#'   considered as agreement or disagreement. If e.g., one actor has 60 percent 
-#'   of agreeing and 40 percent of disagreeing statements towards a concept, a 
-#'   \code{threshold} of 0.51 will recode the actor position on this concept as 
-#'   "agreement". The same accounts also for disagreeing statements. If one 
-#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements, 
-#'   a \code{threshold} of 0.51 will recode the actor position on this concept 
-#'   as "disagreement". All values in between the \code{threshold} (e.g., 55 
-#'   percent agreement and 45 percent of disagreement and a threshold of 0.6) 
-#'   will be recoded as \code{2}. If is set to \code{NULL}, all "mixed"  
-#'   positions of actors will be recoded as \code{2}. Must be strictly 
+#' @param threshold Numeric value that specifies when a mixed position can be
+#'   considered as agreement or disagreement. If e.g., one actor has 60 percent
+#'   of agreeing and 40 percent of disagreeing statements towards a concept, a
+#'   \code{threshold} of 0.51 will recode the actor position on this concept as
+#'   "agreement". The same accounts also for disagreeing statements. If one
+#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements,
+#'   a \code{threshold} of 0.51 will recode the actor position on this concept
+#'   as "disagreement". All values in between the \code{threshold} (e.g., 55
+#'   percent agreement and 45 percent of disagreement and a threshold of 0.6)
+#'   will be recoded as \code{2}. If is set to \code{NULL}, all "mixed"
+#'   positions of actors will be recoded as \code{2}. Must be strictly
 #'   positive.
-#' @param lambda_constraints A list of lists specifying constraints on the 
-#'   concept parameters. Note that value \code{1} in the brackets of the 
-#'   argument refers to the negative item difficulty parameters, which in 
-#'   general should not be constrained. Value \code{2} relates to the item 
-#'   discrimination parameter and should be used for constraints on concepts. 
-#'   Three forms of constraints are possible: 
-#'   \code{conceptname = list(2, value)} will constrain the item discrimination 
-#'   parameter to be equal to the specified value (e.g., 0). 
-#'   \code{conceptname = list(2,"+")} will constrain the item discrimination 
-#'   parameter to be positively scaled and \code{conceptname = list(2, "-")} 
+#' @param lambda_constraints A list of lists specifying constraints on the
+#'   concept parameters. Note that value \code{1} in the brackets of the
+#'   argument refers to the negative item difficulty parameters, which in
+#'   general should not be constrained. Value \code{2} relates to the item
+#'   discrimination parameter and should be used for constraints on concepts.
+#'   Three forms of constraints are possible:
+#'   \code{conceptname = list(2, value)} will constrain the item discrimination
+#'   parameter to be equal to the specified value (e.g., 0).
+#'   \code{conceptname = list(2,"+")} will constrain the item discrimination
+#'   parameter to be positively scaled and \code{conceptname = list(2, "-")}
 #'   will constrain the parameter to be negatively scaled (see example).
 #' @param mcmc_iterations The number of iterations for the sampler.
 #' @param mcmc_burnin The number of burn-in iterations for the sampler.
-#' @param mcmc_thin The thinning interval for the sampler. Iterations must be 
+#' @param mcmc_thin The thinning interval for the sampler. Iterations must be
 #'   divisible by the thinning interval.
-#' @param mcmc_tune The tuning parameter for the acceptance rates of the 
-#'   sampler. Acceptance rates should ideally range between \code{0.15} and 
-#'   \code{0.5}. Can be either a scalar or a k-vector. Must be strictly 
+#' @param mcmc_tune The tuning parameter for the acceptance rates of the
+#'   sampler. Acceptance rates should ideally range between \code{0.15} and
+#'   \code{0.5}. Can be either a scalar or a k-vector. Must be strictly
 #'   positive.
-#' @param mcmc_normalize Logical. Should the MCMC output be normalized? If 
-#'   \code{TRUE}, samples are normalized to a mean of \code{0} and a standard 
+#' @param mcmc_normalize Logical. Should the MCMC output be normalized? If
+#'   \code{TRUE}, samples are normalized to a mean of \code{0} and a standard
 #'   deviation of \code{1}.
-#' @param lambda_start \code{Starting values} for the concept parameters. Can 
-#'   be either a scalar or a matrix. If set to \code{NA} (default), the 
-#'   \code{starting values} for the unconstrained parameters in the first 
+#' @param lambda_start \code{Starting values} for the concept parameters. Can
+#'   be either a scalar or a matrix. If set to \code{NA} (default), the
+#'   \code{starting values} for the unconstrained parameters in the first
 #'   column are based on the observed response patterns. The remaining
-#'   unconstrained elements are set to starting values of either \code{1.0} or 
+#'   unconstrained elements are set to starting values of either \code{1.0} or
 #'   \code{-1.0}, depending on the nature of the constraint.
-#' @param lambda_prior_mean The prior mean of the concept parameters. Can be 
+#' @param lambda_prior_mean The prior mean of the concept parameters. Can be
 #'   either a scalar or a matrix.
-#' @param lambda_prior_variance The prior inverse variances of the concept 
+#' @param lambda_prior_variance The prior inverse variances of the concept
 #'   parameters. Can be either a scalar or a matrix.
-#' @param store_variables A character vector indicating which variables should 
-#'   be stored from the scaling. Can either take the value of the character 
-#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"} 
-#'   to store both variables. Note that saving both variables can impact the 
+#' @param store_variables A character vector indicating which variables should
+#'   be stored from the scaling. Can either take the value of the character
+#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"}
+#'   to store both variables. Note that saving both variables can impact the
 #'   speed of the scaling. Defaults to \code{"both"}.
-#' @param drop_constant_concepts Logical. Should concepts that have no 
+#' @param drop_constant_concepts Logical. Should concepts that have no
 #'   variation be deleted before the scaling? Defaults to \code{FALSE}.
-#' @param drop_min_actors A numeric value specifying the minimum number of 
-#'   concepts actors should have mentioned to be included in the scaling. 
+#' @param drop_min_actors A numeric value specifying the minimum number of
+#'   concepts actors should have mentioned to be included in the scaling.
 #'   Defaults to \code{1}.
-#' @param drop_min_concepts A numeric value specifying the minimum number a 
+#' @param drop_min_concepts A numeric value specifying the minimum number a
 #'   concept should have been jointly mentioned by actors. Defaults to \code{2}.
-#' @param verbose A boolean or numeric value indicating whether the iterations 
-#'   of the scaling should be printed to the R console. If set to a numeric 
-#'   value, every \code{verboseth} iteration will be printed. If set to 
-#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in 
+#' @param verbose A boolean or numeric value indicating whether the iterations
+#'   of the scaling should be printed to the R console. If set to a numeric
+#'   value, every \code{verboseth} iteration will be printed. If set to
+#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in
 #'   divided by \code{100}.
 #' @param seed The random seed for the scaling.
-#' @param ... Additional arguments passed to \link{dna_network}. Actors can 
-#'   e.g., be removed with the \code{excludeValues} arguments. The scaling can 
-#'   also be applied to a specific time slice by using \code{start.date} and 
+#' @param ... Additional arguments passed to \link{dna_network}. Actors can
+#'   e.g., be removed with the \code{excludeValues} arguments. The scaling can
+#'   also be applied to a specific time slice by using \code{start.date} and
 #'   \code{stop.date}.
 #'
 #' @examples
 #' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
 #' dna_scale <- dna_scale1dord(
-#'   connection,
+#'   conn,
 #'   variable1 = "organization",
 #'   variable2 = "concept",
 #'   qualifier = "agreement",
@@ -2098,81 +3016,81 @@ dna_scale1dord <- function(connection,
 
 #' Two-dimensional binary scaling from a DNA connection
 #'
-#' Scale ideological positions of two variables (e.g., organizations and 
-#' concepts) from a DNA connection by using Markov Chain Monte Carlo for binary 
-#' two-dimensional Item Response Theory. This is one of the four scaling 
-#' functions. For one-dimensional binary scaling, see \link{dna_scale1dbin}, 
-#' for one-dimensional ordinal scaling, see \link{dna_scale1dord} and for 
+#' Scale ideological positions of two variables (e.g., organizations and
+#' concepts) from a DNA connection by using Markov Chain Monte Carlo for binary
+#' two-dimensional Item Response Theory. This is one of the four scaling
+#' functions. For one-dimensional binary scaling, see \link{dna_scale1dbin},
+#' for one-dimensional ordinal scaling, see \link{dna_scale1dord} and for
 #' two-dimensional ordinal scaling \link{dna_scale2dord}.
 #'
-#' This function is a convenience wrapper for the \link[MCMCpack]{MCMCirtKd} 
-#' function. Using Markov Chain Monte Carlo (MCMC), \code{dna_scale2dbin} 
+#' This function is a convenience wrapper for the \link[MCMCpack]{MCMCirtKd}
+#' function. Using Markov Chain Monte Carlo (MCMC), \code{dna_scale2dbin}
 #' generates a sample from the posterior distribution using standard Gibbs
-#' sampling. For the model form and further help for the scaling arguments, see 
+#' sampling. For the model form and further help for the scaling arguments, see
 #' \link[MCMCpack]{MCMCirtKd}.
-#' 
-#' As in a two-mode network in \link{dna_network}, two variables have to be 
-#' provided for the scaling. The first variable corresponds to the rows of a 
-#' two-mode network and usually entails actors (e.g., \code{"organizations"}), 
-#' while the second variable is equal to the columns of a two-mode network, 
-#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions 
-#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1} 
-#' and \code{variable2}. However, the scaling is not restricted to 
-#' \code{"actors"} and \code{"concepts"} but depends on what you provide in 
+#'
+#' As in a two-mode network in \link{dna_network}, two variables have to be
+#' provided for the scaling. The first variable corresponds to the rows of a
+#' two-mode network and usually entails actors (e.g., \code{"organizations"}),
+#' while the second variable is equal to the columns of a two-mode network,
+#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions
+#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1}
+#' and \code{variable2}. However, the scaling is not restricted to
+#' \code{"actors"} and \code{"concepts"} but depends on what you provide in
 #' \code{variable1} or \code{variable2}.
 #'
-#' \code{dna_scale2dbin} internally uses the \code{combine} qualifier 
-#' aggregation and then recodes the values into \code{0} for disagreement, 
-#' \code{1} for agreement and \code{NA} for mixed positions and non-mentions of 
-#' concepts. Integer qualifiers are also recoded into \code{0} and \code{1} by 
-#' rescaling the qualifier values between \code{0} and \code{1}. You can 
-#' further relax the recoding of \code{NA} values by setting a \code{threshold} 
-#' which lets you decide at which percentage of agreement and disagreement 
-#' an actor position on a concept can be considered as agreement/disagreement 
+#' \code{dna_scale2dbin} internally uses the \code{combine} qualifier
+#' aggregation and then recodes the values into \code{0} for disagreement,
+#' \code{1} for agreement and \code{NA} for mixed positions and non-mentions of
+#' concepts. Integer qualifiers are also recoded into \code{0} and \code{1} by
+#' rescaling the qualifier values between \code{0} and \code{1}. You can
+#' further relax the recoding of \code{NA} values by setting a \code{threshold}
+#' which lets you decide at which percentage of agreement and disagreement
+#' an actor position on a concept can be considered as agreement/disagreement
 #' or mixed position.
-#' 
-#' The argument \code{drop_min_actors} excludes actors with only a limited 
-#' number of concepts used. Limited participation of actors in a debate can 
-#' impact the scaling of the ideal points, as actors with only few mentions of 
-#' concepts convey limited information on their ideological position. The same 
-#' can also be done for concepts with the argument \code{drop_min_concepts}. 
+#'
+#' The argument \code{drop_min_actors} excludes actors with only a limited
+#' number of concepts used. Limited participation of actors in a debate can
+#' impact the scaling of the ideal points, as actors with only few mentions of
+#' concepts convey limited information on their ideological position. The same
+#' can also be done for concepts with the argument \code{drop_min_concepts}.
 #' Concepts that have been rarely mentioned do not strongly discriminate the
-#' ideological positions of actors and can, therefore, impact the accuracy of 
+#' ideological positions of actors and can, therefore, impact the accuracy of
 #' the scaling. Reducing the number of actors of concepts to be scaled hence
-#' improves the precision of the ideological positions for both variables and 
-#' the scaling itself. Another possibility to reduce the number of concepts is 
-#' to use \code{drop_constant_concepts}, which will reduce concepts not having 
-#' any variation in the agreement/disagreement structure of actors. This means 
-#' that all concepts will be dropped which have only agreeing, disagreeing or 
+#' improves the precision of the ideological positions for both variables and
+#' the scaling itself. Another possibility to reduce the number of concepts is
+#' to use \code{drop_constant_concepts}, which will reduce concepts not having
+#' any variation in the agreement/disagreement structure of actors. This means
+#' that all concepts will be dropped which have only agreeing, disagreeing or
 #' mixed statements.
-#' 
-#' As \code{dna_scale2dbin} implements a Bayesian Item Response Theory 
-#' approach, \code{priors} and \code{starting values} can be set on the concept 
-#' parameters. Changing the default \code{prior} values can often 
-#' help you to achieve better results. Constraints on the parameters can also 
-#' be specified to help identifying the model and to indicate in which 
-#' direction ideological positions of actors and concepts run. Please note 
-#' that, unlike \link{dna_scale1dbin}, this function constrains the values 
-#' indicated in \code{variable2}. For these values, the scaling estimates an 
-#' item discrimination parameter for each dimension and an item difficulty 
-#' parameter for both dimensions. The item difficulty parameter should, 
-#' however, not be constrained (see \link[MCMCpack]{MCMCirtKd}). Therefore, you 
+#'
+#' As \code{dna_scale2dbin} implements a Bayesian Item Response Theory
+#' approach, \code{priors} and \code{starting values} can be set on the concept
+#' parameters. Changing the default \code{prior} values can often
+#' help you to achieve better results. Constraints on the parameters can also
+#' be specified to help identifying the model and to indicate in which
+#' direction ideological positions of actors and concepts run. Please note
+#' that, unlike \link{dna_scale1dbin}, this function constrains the values
+#' indicated in \code{variable2}. For these values, the scaling estimates an
+#' item discrimination parameter for each dimension and an item difficulty
+#' parameter for both dimensions. The item difficulty parameter should,
+#' however, not be constrained (see \link[MCMCpack]{MCMCirtKd}). Therefore, you
 #' should set constraints on the item discrimination parameters.
-#' 
-#' Fitting two-dimensional scaling models requires a good choice of concept 
-#' constraints to specify the ideological dimensions of your data. A suitable 
+#'
+#' Fitting two-dimensional scaling models requires a good choice of concept
+#' constraints to specify the ideological dimensions of your data. A suitable
 #' way of identifying your ideological dimensions is to constrain one item
 #' discrimination parameter to load only on one dimension. This means that we
-#' set one parameter to load either positive or negative on one dimension and 
-#' setting it to zero on the other. A second concept should also be constrained 
+#' set one parameter to load either positive or negative on one dimension and
+#' setting it to zero on the other. A second concept should also be constrained
 #' to load either positive or negative on one dimension (see example)
 #'
 #' To plot the resulting ideal points of actors and concepts, you can use the
-#' \link{dna_plotScale} function. To assess if the returned MCMC chain has 
-#' converged to its stationary distribution, please use 
-#' \link{dna_convergenceScale}. The evaluation of convergence is essential to 
-#' report conclusions based on accurate parameter estimates. Achieving chain 
-#' convergence often requires setting the iterations of the MCMC chain to 
+#' \link{dna_plotScale} function. To assess if the returned MCMC chain has
+#' converged to its stationary distribution, please use
+#' \link{dna_convergenceScale}. The evaluation of convergence is essential to
+#' report conclusions based on accurate parameter estimates. Achieving chain
+#' convergence often requires setting the iterations of the MCMC chain to
 #' several million.
 #'
 #' @param connection A \code{dna_connection} object created by the
@@ -2183,75 +3101,77 @@ dna_scale1dord <- function(connection,
 #'   \link{dna_network}). Defaults to \code{"concept"}.
 #' @param qualifier The qualifier variable for the scaling construction (see
 #'   \link{dna_network}). Defaults to \code{"agreement"}.
-#' @param threshold Numeric value that specifies when a mixed position can be 
-#'   considered as agreement or disagreement. If e.g., one actor has 60 percent 
-#'   of agreeing and 40 percent of disagreeing statements towards a concept, a 
-#'   \code{threshold} of 0.51 will recode the actor position on this concept as 
-#'   "agreement". The same accounts also for disagreeing statements. If one 
-#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements, 
-#'   a \code{threshold} of 0.51 will recode the actor position on this concept 
-#'   as "disagreement". All values in between the \code{threshold} (e.g., 55 
-#'   percent agreement and 45 percent of disagreement and a threshold of 0.6) 
-#'   will be recoded as \code{NA}. If is set to \code{NULL}, all "mixed"  
-#'   positions of actors will be recoded as \code{NA}. Must be strictly 
+#' @param threshold Numeric value that specifies when a mixed position can be
+#'   considered as agreement or disagreement. If e.g., one actor has 60 percent
+#'   of agreeing and 40 percent of disagreeing statements towards a concept, a
+#'   \code{threshold} of 0.51 will recode the actor position on this concept as
+#'   "agreement". The same accounts also for disagreeing statements. If one
+#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements,
+#'   a \code{threshold} of 0.51 will recode the actor position on this concept
+#'   as "disagreement". All values in between the \code{threshold} (e.g., 55
+#'   percent agreement and 45 percent of disagreement and a threshold of 0.6)
+#'   will be recoded as \code{NA}. If is set to \code{NULL}, all "mixed"
+#'   positions of actors will be recoded as \code{NA}. Must be strictly
 #'   positive.
-#' @param item_constraints A list of lists specifying constraints on the 
-#'   concept parameters. Note that value \code{1} in the brackets of the 
-#'   argument refers to the item difficulty parameters, which in 
-#'   general should not be constrained. All values above \code{1} relate to the 
-#'   item discrimination parameters on the single dimensions. These should be 
-#'   used for constraints on concepts. Three possible forms of constraints are 
-#'   possible: \code{conceptname = list(2, value)} will constrain a concept to 
-#'   be equal to the specified value (e.g., 0) on the first dimension of the 
-#'   item discrimination parameter. \code{conceptname = list(2,"+")} will 
+#' @param item_constraints A list of lists specifying constraints on the
+#'   concept parameters. Note that value \code{1} in the brackets of the
+#'   argument refers to the item difficulty parameters, which in
+#'   general should not be constrained. All values above \code{1} relate to the
+#'   item discrimination parameters on the single dimensions. These should be
+#'   used for constraints on concepts. Three possible forms of constraints are
+#'   possible: \code{conceptname = list(2, value)} will constrain a concept to
+#'   be equal to the specified value (e.g., 0) on the first dimension of the
+#'   item discrimination parameter. \code{conceptname = list(2,"+")} will
 #'   constrain the concept to be positively scaled on the first dimension and
-#'   \code{conceptname = list(2, "-")} will constrain the concept to be 
-#'   negatively scaled on the first dimension (see example). If you 
-#'   wish to constrain a concept on the second dimension, please indicate this 
+#'   \code{conceptname = list(2, "-")} will constrain the concept to be
+#'   negatively scaled on the first dimension (see example). If you
+#'   wish to constrain a concept on the second dimension, please indicate this
 #'   with a \code{3} in the first position in the bracket.
 #' @param mcmc_iterations The number of iterations for the sampler.
 #' @param mcmc_burnin The number of burn-in iterations for the sampler.
 #' @param mcmc_thin The thinning interval for the sampler. Iterations
 #'   must be divisible by the thinning interval.
-#' @param alpha_beta_start \code{Starting values} for the item difficulty and 
-#'   discrimination parameters. Can be either a scalar or a matrix. If set to 
-#'   \code{NA}, the \code{starting values} for the unconstrained concepts are 
+#' @param alpha_beta_start \code{Starting values} for the item difficulty and
+#'   discrimination parameters. Can be either a scalar or a matrix. If set to
+#'   \code{NA}, the \code{starting values} for the unconstrained concepts are
 #'   set to values generated from a series of proportional odds logistic
-#'   regression fits and \code{starting values} for inequality constrained 
-#'   elements are set to either \code{1.0} or \code{-1.0}, depending on the 
+#'   regression fits and \code{starting values} for inequality constrained
+#'   elements are set to either \code{1.0} or \code{-1.0}, depending on the
 #'   nature of the constraints.
-#' @param alpha_beta_prior_mean The prior means for the item difficulty and 
+#' @param alpha_beta_prior_mean The prior means for the item difficulty and
 #'   discrimination parameters.
-#' @param alpha_beta_prior_variance The inverse variances of the item 
-#'   difficulty and discrimination parameters. Can either be a scalar or a 
+#' @param alpha_beta_prior_variance The inverse variances of the item
+#'   difficulty and discrimination parameters. Can either be a scalar or a
 #'   matrix of two dimensions times the concepts.
-#' @param store_variables A character vector indicating which variables should 
-#'   be stored from the scaling. Can either take the value of the character 
-#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"} 
-#'   to store both variables. Note that saving both variables can impact the 
+#' @param store_variables A character vector indicating which variables should
+#'   be stored from the scaling. Can either take the value of the character
+#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"}
+#'   to store both variables. Note that saving both variables can impact the
 #'   speed of the scaling. Defaults to \code{"both"}.
-#' @param drop_constant_concepts Logical. Should concepts that have no 
+#' @param drop_constant_concepts Logical. Should concepts that have no
 #'   variation be deleted before the scaling? Defaults to \code{FALSE}.
-#' @param drop_min_actors A numeric value specifying the minimum number of 
-#'   concepts actors should have mentioned to be included in the scaling. 
+#' @param drop_min_actors A numeric value specifying the minimum number of
+#'   concepts actors should have mentioned to be included in the scaling.
 #'   Defaults to \code{1}.
-#' @param drop_min_concepts A numeric value specifying the minimum number a 
+#' @param drop_min_concepts A numeric value specifying the minimum number a
 #'   concept should have been jointly mentioned by actors. Defaults to \code{2}.
-#' @param verbose A boolean or numeric value indicating whether the iterations 
-#'   of the scaling should be printed to the R console. If set to a numeric 
-#'   value, every \code{verboseth} iteration will be printed. If set to 
-#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in 
+#' @param verbose A boolean or numeric value indicating whether the iterations
+#'   of the scaling should be printed to the R console. If set to a numeric
+#'   value, every \code{verboseth} iteration will be printed. If set to
+#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in
 #'   divided by \code{100}.
 #' @param seed The random seed for the scaling.
-#' @param ... Additional arguments passed to \link{dna_network}. Actors can 
-#'   e.g., be removed with the \code{excludeValues} arguments. The scaling can 
-#'   also be applied to a specific time slice by using \code{start.date} and 
+#' @param ... Additional arguments passed to \link{dna_network}. Actors can
+#'   e.g., be removed with the \code{excludeValues} arguments. The scaling can
+#'   also be applied to a specific time slice by using \code{start.date} and
 #'   \code{stop.date}.
 #'
 #' @examples
 #' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
 #' dna_scale <- dna_scale2dbin(
-#'   connection,
+#'   conn,
 #'   variable1 = "organization",
 #'   variable2 = "concept",
 #'   qualifier = "agreement",
@@ -2271,7 +3191,7 @@ dna_scale1dord <- function(connection,
 #'   seed = 12345
 #' )
 #' }
-#' 
+#'
 #' @author Tim Henrichsen, Johannes B. Gruber
 #' @export
 #' @importFrom MCMCpack MCMCirtKd
@@ -2414,81 +3334,81 @@ dna_scale2dbin <- function(connection,
 
 #' Two-dimensional ordinal scaling from a DNA connection
 #'
-#' Scale ideological positions of two variables (e.g., organizations and 
-#' concepts from a DNA connection by using Markov Chain Monte Carlo for 
-#' ordinal two-dimensional Item Response Theory. This is one of the four 
-#' scaling functions. For one-dimensional binary scaling, see 
-#' \link{dna_scale1dbin}, for one-dimensional ordinal scaling, see 
-#' \link{dna_scale1dord} and for two-dimensional binary scaling 
+#' Scale ideological positions of two variables (e.g., organizations and
+#' concepts from a DNA connection by using Markov Chain Monte Carlo for
+#' ordinal two-dimensional Item Response Theory. This is one of the four
+#' scaling functions. For one-dimensional binary scaling, see
+#' \link{dna_scale1dbin}, for one-dimensional ordinal scaling, see
+#' \link{dna_scale1dord} and for two-dimensional binary scaling
 #' \link{dna_scale2dbin}.
 #'
-#' This function is a convenience wrapper for the 
-#' \link[MCMCpack]{MCMCordfactanal} function. Using Markov Chain Monte Carlo 
-#' (MCMC), \code{dna_scale2dord} generates a sample from the posterior 
+#' This function is a convenience wrapper for the
+#' \link[MCMCpack]{MCMCordfactanal} function. Using Markov Chain Monte Carlo
+#' (MCMC), \code{dna_scale2dord} generates a sample from the posterior
 #' distribution of an ordinal data factor analysis model, using a
-#' Metropolis-Hastings within Gibbs sampling algorithm. For the model form and 
+#' Metropolis-Hastings within Gibbs sampling algorithm. For the model form and
 #' further help for the scaling arguments, see \link[MCMCpack]{MCMCordfactanal}.
 #'
-#' As in a two-mode network in \link{dna_network}, two variables have to be 
-#' provided for the scaling. The first variable corresponds to the rows of a 
-#' two-mode network and usually entails actors (e.g., \code{"organizations"}), 
-#' while the second variable is equal to the columns of a two-mode network, 
-#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions 
-#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1} 
-#' and \code{variable2}. However, the scaling is not restricted to 
-#' \code{"actors"} and \code{"concepts"} but depends on what you provide in 
+#' As in a two-mode network in \link{dna_network}, two variables have to be
+#' provided for the scaling. The first variable corresponds to the rows of a
+#' two-mode network and usually entails actors (e.g., \code{"organizations"}),
+#' while the second variable is equal to the columns of a two-mode network,
+#' typically expressed by \code{"concepts"}. The \code{dna_scale} functions
+#' use \code{"actors"} and \code{"concepts"} as synonyms for \code{variable1}
+#' and \code{variable2}. However, the scaling is not restricted to
+#' \code{"actors"} and \code{"concepts"} but depends on what you provide in
 #' \code{variable1} or \code{variable2}.
 #'
-#' \code{dna_scale2dord} internally uses the \code{combine} qualifier 
-#' aggregation and then recodes the values into \code{1} for disagreement, 
-#' \code{2} for mixed positions and \code{3} for agreement. Integer qualifiers 
-#' are not recoded. When \code{zero_is_na} is set to \code{TRUE}, non-mentions 
-#' of concepts are set to \code{NA}, while setting the argument to \code{FALSE} 
-#' recodes them to \code{2} as mixed position. By setting a \code{threshold}, 
+#' \code{dna_scale2dord} internally uses the \code{combine} qualifier
+#' aggregation and then recodes the values into \code{1} for disagreement,
+#' \code{2} for mixed positions and \code{3} for agreement. Integer qualifiers
+#' are not recoded. When \code{zero_is_na} is set to \code{TRUE}, non-mentions
+#' of concepts are set to \code{NA}, while setting the argument to \code{FALSE}
+#' recodes them to \code{2} as mixed position. By setting a \code{threshold},
 #' you can further decide at which percentage of agreement and disagreement
-#' an actor position on a concept can be considered as agreement/disagreement 
+#' an actor position on a concept can be considered as agreement/disagreement
 #' or mixed position.
-#' 
-#' The argument \code{drop_min_actors} excludes actors with only a limited 
-#' number of concepts used. Limited participation of actors in a debate can 
-#' impact the scaling of the ideal points, as actors with only few mentions of 
-#' concepts convey limited information on their ideological position. The same 
-#' can also be done for concepts with the argument \code{drop_min_concepts}. 
+#'
+#' The argument \code{drop_min_actors} excludes actors with only a limited
+#' number of concepts used. Limited participation of actors in a debate can
+#' impact the scaling of the ideal points, as actors with only few mentions of
+#' concepts convey limited information on their ideological position. The same
+#' can also be done for concepts with the argument \code{drop_min_concepts}.
 #' Concepts that have been rarely mentioned do not strongly discriminate the
-#' ideological positions of actors and can, therefore, impact the accuracy of 
-#' the scaling. Reducing the number of actors of concepts to be scaled hence 
-#' improves the precision of the ideological positions for both variables and 
-#' the scaling itself. Another possibility to reduce the number of concepts is 
-#' to use \code{drop_constant_concepts}, which will reduce concepts not having 
-#' any variation in the agreement/disagreement structure of actors. This means 
-#' that all concepts will be dropped which have only agreeing, disagreeing or 
+#' ideological positions of actors and can, therefore, impact the accuracy of
+#' the scaling. Reducing the number of actors of concepts to be scaled hence
+#' improves the precision of the ideological positions for both variables and
+#' the scaling itself. Another possibility to reduce the number of concepts is
+#' to use \code{drop_constant_concepts}, which will reduce concepts not having
+#' any variation in the agreement/disagreement structure of actors. This means
+#' that all concepts will be dropped which have only agreeing, disagreeing or
 #' mixed statements.
 #'
-#' As \code{dna_scale2dord} implements a Bayesian Item Response Theory 
-#' approach, \code{priors} and \code{starting values} can be set on the concept 
-#' parameters. Changing the default \code{prior} values can often 
-#' help you to achieve better results. Constraints on the concept parameters 
-#' can also be specified to help identifying the model and to indicate in which 
-#' direction ideological positions of actors and concepts run. For concepts, 
-#' the scaling estimates an item discrimination parameter for each dimension 
-#' and an item difficulty for both dimensions. The item difficulty parameter 
-#' should, however, not be constrained (see \link[MCMCpack]{MCMCordfactanal}). 
+#' As \code{dna_scale2dord} implements a Bayesian Item Response Theory
+#' approach, \code{priors} and \code{starting values} can be set on the concept
+#' parameters. Changing the default \code{prior} values can often
+#' help you to achieve better results. Constraints on the concept parameters
+#' can also be specified to help identifying the model and to indicate in which
+#' direction ideological positions of actors and concepts run. For concepts,
+#' the scaling estimates an item discrimination parameter for each dimension
+#' and an item difficulty for both dimensions. The item difficulty parameter
+#' should, however, not be constrained (see \link[MCMCpack]{MCMCordfactanal}).
 #' Therefore, you should set constraints on the item discrimination parameters.
-#' 
-#' Fitting two-dimensional scaling models requires a good choice of concept 
-#' constraints to specify the ideological dimensions of your data. A suitable 
+#'
+#' Fitting two-dimensional scaling models requires a good choice of concept
+#' constraints to specify the ideological dimensions of your data. A suitable
 #' way of identifying your ideological dimensions is to constrain one item
 #' discrimination parameter to load only on one dimension. This means that we
-#' set one parameter to load either positive or negative on one dimension and 
-#' setting it to zero on the other. A second concept should also be constrained 
+#' set one parameter to load either positive or negative on one dimension and
+#' setting it to zero on the other. A second concept should also be constrained
 #' to load either positive or negative on one dimension (see example)
 #'
 #' To plot the resulting ideal points of actors and concepts, you can use the
-#' \link{dna_plotScale} function. To assess if the returned MCMC chain has 
-#' converged to its stationary distribution, please use 
-#' \link{dna_convergenceScale}. The evaluation of convergence is essential to 
-#' report conclusions based on accurate parameter estimates. Achieving chain 
-#' convergence often requires setting the iterations of the MCMC chain to 
+#' \link{dna_plotScale} function. To assess if the returned MCMC chain has
+#' converged to its stationary distribution, please use
+#' \link{dna_convergenceScale}. The evaluation of convergence is essential to
+#' report conclusions based on accurate parameter estimates. Achieving chain
+#' convergence often requires setting the iterations of the MCMC chain to
 #' several million.
 #'
 #' @param connection A \code{dna_connection} object created by the
@@ -2499,80 +3419,82 @@ dna_scale2dbin <- function(connection,
 #'   \link{dna_network}). Defaults to \code{"concept"}.
 #' @param qualifier The qualifier variable for the scaling construction (see
 #'   \link{dna_network}). Defaults to \code{"agreement"}.
-#' @param zero_as_na Logical. If \code{TRUE}, all non-mentions of an actor 
-#'   towards a concept will be recoded as \code{NA}. If \code{FALSE} as 
+#' @param zero_as_na Logical. If \code{TRUE}, all non-mentions of an actor
+#'   towards a concept will be recoded as \code{NA}. If \code{FALSE} as
 #'   \code{2}.
-#' @param threshold Numeric value that specifies when a mixed position can be 
-#'   considered as agreement or disagreement. If e.g., one actor has 60 percent 
-#'   of agreeing and 40 percent of disagreeing statements towards a concept, a 
-#'   \code{threshold} of 0.51 will recode the actor position on this concept as 
-#'   "agreement". The same accounts also for disagreeing statements. If one 
-#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements, 
-#'   a \code{threshold} of 0.51 will recode the actor position on this concept 
-#'   as "disagreement". All values in between the \code{threshold} (e.g., 55 
-#'   percent agreement and 45 percent of disagreement and a threshold of 0.6) 
-#'   will be recoded as \code{2}. If is set to \code{NULL}, all "mixed"  
-#'   positions of actors will be recoded as \code{2}. Must be strictly 
+#' @param threshold Numeric value that specifies when a mixed position can be
+#'   considered as agreement or disagreement. If e.g., one actor has 60 percent
+#'   of agreeing and 40 percent of disagreeing statements towards a concept, a
+#'   \code{threshold} of 0.51 will recode the actor position on this concept as
+#'   "agreement". The same accounts also for disagreeing statements. If one
+#'   actor has 60 percent of disagreeing and 40 percent of agreeing statements,
+#'   a \code{threshold} of 0.51 will recode the actor position on this concept
+#'   as "disagreement". All values in between the \code{threshold} (e.g., 55
+#'   percent agreement and 45 percent of disagreement and a threshold of 0.6)
+#'   will be recoded as \code{2}. If is set to \code{NULL}, all "mixed"
+#'   positions of actors will be recoded as \code{2}. Must be strictly
 #'   positive.
-#' @param lambda_constraints A list of lists specifying constraints on the 
-#'   concept parameters. Note that value \code{1} in the brackets of the 
-#'   argument refers to the item difficulty parameters, which in 
-#'   general should not be constrained. All values above \code{1} relate to the 
-#'   item discrimination parameters on the single dimensions. These should be 
-#'   used for constraints on concepts. Three possible forms of constraints are 
-#'   possible: \code{conceptname = list(2, value)} will constrain a concept to 
-#'   be equal to the specified value (e.g., 0) on the first dimension of the 
-#'   item discrimination parameter. \code{conceptname = list(2,"+")} will 
+#' @param lambda_constraints A list of lists specifying constraints on the
+#'   concept parameters. Note that value \code{1} in the brackets of the
+#'   argument refers to the item difficulty parameters, which in
+#'   general should not be constrained. All values above \code{1} relate to the
+#'   item discrimination parameters on the single dimensions. These should be
+#'   used for constraints on concepts. Three possible forms of constraints are
+#'   possible: \code{conceptname = list(2, value)} will constrain a concept to
+#'   be equal to the specified value (e.g., 0) on the first dimension of the
+#'   item discrimination parameter. \code{conceptname = list(2,"+")} will
 #'   constrain the concept to be positively scaled on the first dimension and
-#'   \code{conceptname = list(2, "-")} will constrain the concept to be 
-#'   negatively scaled on the first dimension (see example). If you 
-#'   wish to constrain a concept on the second dimension, please indicate this 
+#'   \code{conceptname = list(2, "-")} will constrain the concept to be
+#'   negatively scaled on the first dimension (see example). If you
+#'   wish to constrain a concept on the second dimension, please indicate this
 #'   with a \code{3} in the first position in the bracket.
 #' @param mcmc_iterations The number of iterations for the sampler.
 #' @param mcmc_burnin The number of burn-in iterations for the sampler.
-#' @param mcmc_thin The thinning interval for the sampler. Iterations must be 
+#' @param mcmc_thin The thinning interval for the sampler. Iterations must be
 #'   divisible by the thinning interval.
-#' @param mcmc_tune The tuning parameter for the acceptance rates of the 
-#'   sampler. Acceptance rates should ideally range between \code{0.15} and 
-#'   \code{0.5}. Can be either a scalar or a k-vector. Must be strictly 
+#' @param mcmc_tune The tuning parameter for the acceptance rates of the
+#'   sampler. Acceptance rates should ideally range between \code{0.15} and
+#'   \code{0.5}. Can be either a scalar or a k-vector. Must be strictly
 #'   positive.
-#' @param lambda_start \code{Starting values} for the concept parameters. Can 
-#'   be either a scalar or a matrix. If set to \code{NA} (default), the 
-#'   \code{starting values} for the unconstrained parameters in the first 
+#' @param lambda_start \code{Starting values} for the concept parameters. Can
+#'   be either a scalar or a matrix. If set to \code{NA} (default), the
+#'   \code{starting values} for the unconstrained parameters in the first
 #'   column are based on the observed response pattern. The remaining
-#'   unconstrained elements are set to \code{starting values} of either 
+#'   unconstrained elements are set to \code{starting values} of either
 #'   \code{1.0} or \code{-1.0}, depending on the nature of the constraint.
-#' @param lambda_prior_mean The prior mean of the concept parameters. Can be 
+#' @param lambda_prior_mean The prior mean of the concept parameters. Can be
 #'   either a scalar or a matrix.
-#' @param lambda_prior_variance The prior inverse variances of the concept 
+#' @param lambda_prior_variance The prior inverse variances of the concept
 #'   parameters. Can be either a scalar or a matrix.
-#' @param store_variables A character vector indicating which variables should 
-#'   be stored from the scaling. Can either take the value of the character 
-#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"} 
-#'   to store both variables. Note that saving both variables can impact the 
+#' @param store_variables A character vector indicating which variables should
+#'   be stored from the scaling. Can either take the value of the character
+#'   vector indicated in \code{variable1} or \code{variable2} or \code{"both"}
+#'   to store both variables. Note that saving both variables can impact the
 #'   speed of the scaling. Defaults to \code{"both"}.
-#' @param drop_constant_concepts Logical. Should concepts that have no 
+#' @param drop_constant_concepts Logical. Should concepts that have no
 #'   variation be deleted before the scaling? Defaults to \code{FALSE}.
-#' @param drop_min_actors A numeric value specifying the minimum number of 
-#'   concepts actors should have mentioned to be included in the scaling. 
+#' @param drop_min_actors A numeric value specifying the minimum number of
+#'   concepts actors should have mentioned to be included in the scaling.
 #'   Defaults to \code{1}.
-#' @param drop_min_concepts A numeric value specifying the minimum number a 
+#' @param drop_min_concepts A numeric value specifying the minimum number a
 #'   concept should have been jointly mentioned by actors. Defaults to \code{2}.
-#' @param verbose A boolean or numeric value indicating whether the iterations 
-#'   of the scaling should be printed to the R console. If set to a numeric 
-#'   value, every \code{verboseth} iteration will be printed. If set to 
-#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in 
+#' @param verbose A boolean or numeric value indicating whether the iterations
+#'   of the scaling should be printed to the R console. If set to a numeric
+#'   value, every \code{verboseth} iteration will be printed. If set to
+#'   \code{TRUE}, \code{verbose} will print the total of iterations and burn-in
 #'   divided by \code{100}.
 #' @param seed The random seed for the scaling.
-#' @param ... Additional arguments passed to \link{dna_network}. Actors can 
-#'   e.g., be removed with the \code{excludeValues} arguments. The scaling can 
-#'   also be applied to a specific time slice by using \code{start.date} and 
+#' @param ... Additional arguments passed to \link{dna_network}. Actors can
+#'   e.g., be removed with the \code{excludeValues} arguments. The scaling can
+#'   also be applied to a specific time slice by using \code{start.date} and
 #'   \code{stop.date}.
 #'
 #' @examples
 #' \dontrun{
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
 #' dna_scale <- dna_scale2dord(
-#'   connection,
+#'   conn,
 #'   variable1 = "organization",
 #'   variable2 = "concept",
 #'   qualifier = "agreement",
@@ -2740,18 +3662,20 @@ dna_scale2dord <- function(connection,
 
 #' Plot a \code{dna_scale} object
 #'
-#' Plot convergence diagnostics of the MCMC chain created by the four 
+#' Plot convergence diagnostics of the MCMC chain created by the four
 #' \code{dna_scale} functions.
-#' 
-#' Plots \code{trace plots} of the \code{dna_scale} MCMC output. For further 
+#'
+#' Plots \code{trace plots} of the \code{dna_scale} MCMC output. For further
 #' convergence diagnostics, see \link{dna_convergenceScale}.
-#' 
+#'
 #' @param x A dna_scale object.
 #' @param ... Further options (currently not used).
 #'
 #' @examples
 #' \dontrun{
-#' dna_scale <- dna_scale1dbin(connection,
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' dna_scale <- dna_scale1dbin(conn,
 #'                             variable1 = "organization",
 #'                             variable2 = "concept",
 #'                             qualifier = "agreement",
@@ -2764,7 +3688,7 @@ dna_scale2dord <- function(connection,
 #'                             seed = 12345)
 #' plot(dna_scale)
 #' }
-#' 
+#'
 #' @author Tim Henrichsen, Johannes B. Gruber
 #' @export
 plot.dna_scale <- function(x, ...) {
@@ -2776,19 +3700,21 @@ plot.dna_scale <- function(x, ...) {
 
 
 #' Print the summary of a \code{dna_scale} object
-#' 
-#' Show details of the MCMC chain created by the four \code{dna_scale} 
+#'
+#' Show details of the MCMC chain created by the four \code{dna_scale}
 #' functions.
-#' 
-#' Prints the method that was used for the scaling, the number of values in the 
+#'
+#' Prints the method that was used for the scaling, the number of values in the
 #' object and their means.
-#' 
+#'
 #' @param x A \code{dna_scale} object.
 #' @param ... Further options (currently not used).
-#' 
+#'
 #' @examples
 #' \dontrun{
-#' dna_scale <- dna_scale1dbin(connection,
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' dna_scale <- dna_scale1dbin(conn,
 #'                             variable1 = "organization",
 #'                             variable2 = "concept",
 #'                             qualifier = "agreement",
@@ -2797,7 +3723,7 @@ plot.dna_scale <- function(x, ...) {
 #'                             mcmc_burnin = 2000,
 #'                             mcmc_thin = 10,
 #'                             store_variables = "both")
-#' dna_scale                           
+#' dna_scale
 #' }
 #' @author Tim Henrichsen, Johannes B. Gruber
 #' @export
@@ -2994,18 +3920,17 @@ print.dna_scale <- function(x, ...) {
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' nw <- dna_network(conn,
-#' networkType = "onemode",
-#' variable1 = "organization",
-#' variable2 = "concept",
-#' qualifier = "agreement",
-#' qualifierAggregation = "congruence",
-#' normalization = "average",
-#' excludeValues = list("concept" =
-#' c("There should be legislation to regulate emissions.")))
+#'   networkType = "onemode",
+#'   variable1 = "organization",
+#'   variable2 = "concept",
+#'   qualifier = "agreement",
+#'   qualifierAggregation = "congruence",
+#'   normalization = "average",
+#'   excludeValues = list("concept" =
+#'   c("There should be legislation to regulate emissions.")))
 #'
 #' # plot network
 #' dna_plotNetwork(nw)
@@ -3217,8 +4142,7 @@ dna_network <- function(connection,
 #' @examples
 #' \dontrun{
 #' library("ggplot2")
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
 #' tW <- dna_timeWindow(connection = conn,
@@ -3246,7 +4170,9 @@ dna_network <- function(connection,
 #'
 #' dna_plotTimeWindow(mp, include.y = c(-1, 1)) + theme_bw()
 #' }
+#'
 #' @author Philip Leifeld, Johannes B. Gruber
+#'
 #' @export
 #' @import ggplot2
 #' @import parallel
@@ -3776,8 +4702,7 @@ dna_timeWindow <- function(connection,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' nw <- dna_network(conn, networkType = "onemode")
 #' graph <- dna_toIgraph(nw)
@@ -3824,8 +4749,7 @@ dna_toIgraph <- function(x,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
 #' ### Convert dna_connection to eventSequence
@@ -3855,7 +4779,7 @@ dna_toREM <- function(x,
                    ), dots_network))
   } else if (any(class(x) %in% "dna_eventlist")) {
     if (any(names(dots) %in% names(formals("dna_network")))) {
-      message("Since x is already a network object, arguments for dna_network() provided through '...' are ignored")
+      message("Since 'x' is already a network object, arguments for dna_network() provided through '...' are ignored")
     }
     dta <- x
     args <- c(as.list(attributes(x)$call)[-1],
@@ -3896,8 +4820,7 @@ dna_toREM <- function(x,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' nw <- dna_network(conn, networkType = "onemode")
 #' network <- dna_toNetwork(nw)
@@ -3984,8 +4907,7 @@ dna_toNetwork <- function(x,
 #'   the ggplot2 logic (see example).
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' clust <- dna_cluster(conn)
 #' mds <- dna_plotCoordinates(clust)
@@ -4146,7 +5068,7 @@ dna_plotCoordinates <- function(clust,
 #' Plots a dendrogram from objects derived via \link{dna_cluster}.
 #'
 #' This function is a convenience wrapper for several different dendrogram
-#' types, which can be plotted using the \code{ggraph} package.
+#' types, which can be plotted using the \pkg{ggraph} package.
 #'
 #' @param clust A \code{dna_cluster} object created by the \link{dna_cluster}
 #'   function.
@@ -4201,8 +5123,7 @@ dna_plotCoordinates <- function(clust,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' clust <- dna_cluster(conn)
 #' dend <- dna_plotDendro(clust)
@@ -4413,7 +5334,7 @@ dna_plotDendro <- function(clust,
   # labels
   if (leaf_labels == "ticks") {
     dg <- dg +
-      scale_x_continuous(breaks = seq(0, length(clust$labels)-1, by = 1),
+      scale_x_continuous(breaks = seq(0, length(clust$labels) - 1, by = 1),
                          labels = clust$labels_short[clust$order])
   } else if (leaf_labels == "nodes") {
     if (circular == FALSE) {
@@ -4565,8 +5486,7 @@ dna_plotDendro <- function(clust,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #' clust <- dna_cluster(conn)
 #' dend <- dna_plotHeatmap(clust,
@@ -4845,7 +5765,6 @@ dna_plotHeatmap <- function(clust,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
 #' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
@@ -5155,7 +6074,6 @@ dna_plotHive <- function(x,
 #'   use \code{+} and ggplot2 functions.
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
 #' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
@@ -5407,77 +6325,79 @@ dna_plotNetwork <- function(x,
 
 #' Plot ideological ideal points from a dna_scale object
 #'
-#' Plots ideological ideal points with the results of the MCMC scaling 
+#' Plots ideological ideal points with the results of the MCMC scaling
 #' performed in the \code{dna_scale} functions.
 #'
-#' This function is a convenience wrapper for the \code{ggplot2} package to 
-#' plot ideological ideal points from \code{dna_scale} objects. Two different 
-#' variables can be plotted: 
-#' 
-#' Firstly, you can plot the ideological ideal points of subjects (e.g., 
-#' \code{"organizations"}) which you have provided in \code{variable1} of the 
-#' \code{dna_scale} functions. The ideal point, which is the mean value of the 
-#' MCMC sample parameters, serves as the ideological position of an actor in an 
+#' This function is a convenience wrapper for the \code{ggplot2} package to
+#' plot ideological ideal points from \code{dna_scale} objects. Two different
+#' variables can be plotted:
+#'
+#' Firstly, you can plot the ideological ideal points of subjects (e.g.,
+#' \code{"organizations"}) which you have provided in \code{variable1} of the
+#' \code{dna_scale} functions. The ideal point, which is the mean value of the
+#' MCMC sample parameters, serves as the ideological position of an actor in an
 #' e.g., ideological or policy dimension.
-#' 
-#' Secondly, you can plot the item discrimination parameter of the variable 
-#' provided in \code{variable2} of the \code{dna_scale} functions (e.g., 
-#' \code{"concepts"}). The item discrimination parameter indicates how 
-#' good for example a specific \code{"concept"} separates actors in the 
+#'
+#' Secondly, you can plot the item discrimination parameter of the variable
+#' provided in \code{variable2} of the \code{dna_scale} functions (e.g.,
+#' \code{"concepts"}). The item discrimination parameter indicates how
+#' good for example a specific \code{"concept"} separates actors in the
 #' ideological space.
-#' 
-#' Plotting all actors or concepts can create chaotic plots, you can, therefore, 
-#' limit the plot by including only the most active actors or most prominent 
-#' concepts with \code{exclude_min}. Specific entries can be excluded with the 
-#' \code{exclude} argument. Furthermore, the plot can be split into several 
+#'
+#' Plotting all actors or concepts can create chaotic plots, you can, therefore,
+#' limit the plot by including only the most active actors or most prominent
+#' concepts with \code{exclude_min}. Specific entries can be excluded with the
+#' \code{exclude} argument. Furthermore, the plot can be split into several
 #' facets according to the attributes of the variables.
 #'
 #' @param dna_scale A \code{dna_scale} object.
 #' @param variable Variable to be plotted.
-#' @param dimensions Number of dimensions to be plotted. Valid values are 
+#' @param dimensions Number of dimensions to be plotted. Valid values are
 #'   \code{1} and \code{2} for a one- or two-dimensional plot, and \code{2.1}
-#'   or \code{2.2} for the first or second dimension of a two-dimensional 
+#'   or \code{2.2} for the first or second dimension of a two-dimensional
 #'   scaling.
-#' @param hpd A numeric scalar specifying the size of the Highest Posterior 
-#'   Density intervals (HPD). Defaults to \code{0.95}. \code{NULL} turns off 
+#' @param hpd A numeric scalar specifying the size of the Highest Posterior
+#'   Density intervals (HPD). Defaults to \code{0.95}. \code{NULL} turns off
 #'   HPDs.
 #' @param label Logical. Should labels be plotted? Defaults to \code{TRUE}.
 #' @param label_size,point_size Label and point size in pts.
-#' @param label_colors,point_colors,hpd_colors Colors for the labels, points 
-#'   and Highest Posterior Densities of the plot. \code{TRUE} colors the 
-#'   variables according to the attributes in the object and \code{FALSE} sets 
-#'   colors to black. You can also provide customized colors. Possible 
-#'   options are either providing a single character vector (if you wish to 
-#'   color a plot element in only one color), or a character or numeric vector 
-#'   or data frame of at least the same length as values to be plotted. If you 
-#'   use a data frame, please provide one column named \code{"names"} that 
-#'   indicates the names of the values and one column named \code{"colors"} 
+#' @param label_colors,point_colors,hpd_colors Colors for the labels, points
+#'   and Highest Posterior Densities of the plot. \code{TRUE} colors the
+#'   variables according to the attributes in the object and \code{FALSE} sets
+#'   colors to black. You can also provide customized colors. Possible
+#'   options are either providing a single character vector (if you wish to
+#'   color a plot element in only one color), or a character or numeric vector
+#'   or data frame of at least the same length as values to be plotted. If you
+#'   use a data frame, please provide one column named \code{"names"} that
+#'   indicates the names of the values and one column named \code{"colors"}
 #'   that specifies the value colors. Defaults to \code{TRUE}.
 #' @param hpd_lwd Highest Posterior Density interval linewidth in pts.
-#' @param intercept_lwd Linewidth of the intercept (a vertical bar indicating 
+#' @param intercept_lwd Linewidth of the intercept (a vertical bar indicating
 #'   zero) in pts.
 #' @param intercept_color Color for the intercept.
-#' @param intercept_lty A character vector providing the linetype of the 
-#'   intercept. Valid values are \code{"solid"}, \code{"dashed"}, 
-#'   \code{"dotted"}, \code{"twodash"}, \code{"dotdash"}, \code{"longdash"} or 
-#'   \code{"blank"}. Defaults to \code{"dashed"}. \code{"blank"} turns off 
+#' @param intercept_lty A character vector providing the linetype of the
+#'   intercept. Valid values are \code{"solid"}, \code{"dashed"},
+#'   \code{"dotted"}, \code{"twodash"}, \code{"dotdash"}, \code{"longdash"} or
+#'   \code{"blank"}. Defaults to \code{"dashed"}. \code{"blank"} turns off
 #'   intercept.
-#' @param intercept_alpha A numeric value indicating the alpha level of the 
+#' @param intercept_alpha A numeric value indicating the alpha level of the
 #'   intercept.
-#' @param facet A character vector specifying which attribute of the variable 
-#'   should be used for the facet plot. Valid values are \code{"type"}, 
+#' @param facet A character vector specifying which attribute of the variable
+#'   should be used for the facet plot. Valid values are \code{"type"},
 #'   \code{"alias"} or \code{"notes"}.
-#' @param truncate Sets the number of characters to which labels should be 
+#' @param truncate Sets the number of characters to which labels should be
 #'   truncated.
-#' @param x_axis_label,y_axis_label A character vector specifying the x and y 
+#' @param x_axis_label,y_axis_label A character vector specifying the x and y
 #'   axis label name(s).
-#' @param exclude_min A numeric value reducing the plot to actors/concepts 
+#' @param exclude_min A numeric value reducing the plot to actors/concepts
 #'   with a minimum frequency of statements.
 #' @param exclude A character vector to exclude actors/concepts from the plot.
 #'
 #' @examples
 #' \dontrun{
-#' dna_scale <- dna_scale1dbin(connection,
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' dna_scale <- dna_scale1dbin(conn,
 #'                             variable1 = "organization",
 #'                             variable2 = "concept",
 #'                             qualifier = "agreement",
@@ -5950,8 +6870,7 @@ dna_plotScale <- function(dna_scale,
 #' @examples
 #' \dontrun{
 #' library("ggplot2")
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
 #' tW <- dna_timeWindow(connection = conn,
@@ -6071,16 +6990,17 @@ dna_plotTimeWindow <- function(x,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
 #' dna_barplot(connection = conn,
-#'of = "concept",
-#'colours = FALSE,
-#'barWidth = 0.5)
+#'             of = "concept",
+#'             colours = FALSE,
+#'             barWidth = 0.5)
 #' }
+#'
 #' @author Johannes B. Gruber
+#'
 #' @export
 #' @import ggplot2
 dna_barplot <- function(connection,
@@ -6260,72 +7180,74 @@ dna_barplot <- function(connection,
 
 #' Convergence diagnostics for \code{dna_scale} objects
 #'
-#' Convergence diagnostics for the MCMC chain created by the \code{dna_scale} 
+#' Convergence diagnostics for the MCMC chain created by the \code{dna_scale}
 #' functions.
 #'
-#' This function offers several convergence diagnostics for the MCMC chain 
-#' created by the \code{dna_scale} functions. Note that for the values 
-#' indicated in \code{variable2}, only the item discrimination parameters are 
+#' This function offers several convergence diagnostics for the MCMC chain
+#' created by the \code{dna_scale} functions. Note that for the values
+#' indicated in \code{variable2}, only the item discrimination parameters are
 #' evaluated. There are three possible ways of assessing the mixing of a chain:
 #'
-#' \code{"trace"} is a graphic inspection of the sampled values by iteration. 
-#' Once the chain has reached its stationary distribution, the parameter values 
-#' should look like a hairy caterpillar, meaning that the chain should not stay 
-#' in the same state for too long or have too many consecutive steps in one 
+#' \code{"trace"} is a graphic inspection of the sampled values by iteration.
+#' Once the chain has reached its stationary distribution, the parameter values
+#' should look like a hairy caterpillar, meaning that the chain should not stay
+#' in the same state for too long or have too many consecutive steps in one
 #' direction.
 #'
-#' \code{"density"} visually analyzes the cumulative density of the sampled 
-#' values for each parameter. Unimodality should indicate convergence of the 
-#' chain, while multimodality might indicate an identification problem leading 
+#' \code{"density"} visually analyzes the cumulative density of the sampled
+#' values for each parameter. Unimodality should indicate convergence of the
+#' chain, while multimodality might indicate an identification problem leading
 #' to non-convergence.
 #'
-#' \code{"geweke"} conducts a difference of means test for the sampled values 
-#' for two sections of the chain, by comparing the first 10 percent of 
-#' iterations with the final 50 percent of iterations. If the samples are drawn 
-#' from the stationary distribution of the chain, a difference of means test 
-#' should be statistically significant at some conventional level (in our case 
-#' 0.05). The returned test statistic is a standard Z-score. All values should 
-#' be below the 1.96 value which indicates significance at the p =< 0.05 
+#' \code{"geweke"} conducts a difference of means test for the sampled values
+#' for two sections of the chain, by comparing the first 10 percent of
+#' iterations with the final 50 percent of iterations. If the samples are drawn
+#' from the stationary distribution of the chain, a difference of means test
+#' should be statistically significant at some conventional level (in our case
+#' 0.05). The returned test statistic is a standard Z-score. All values should
+#' be below the 1.96 value which indicates significance at the p =< 0.05
 #' level.
-#' 
-#' In case your chain has not converged, a first solution could be to increase 
-#' the \code{iterations} and the \code{burn-in} phase of your scaling. Other 
+#'
+#' In case your chain has not converged, a first solution could be to increase
+#' the \code{iterations} and the \code{burn-in} phase of your scaling. Other
 #' options can be to reduce the scaling to only prominent actors and/or
-#' concepts with the \code{drop_min_actors} and/or \code{drop_min_concepts} 
-#' arguments in the respective \code{dna_scale} functions. Setting 
-#' \code{constraints} or changing \code{priors} provide another possibility to 
+#' concepts with the \code{drop_min_actors} and/or \code{drop_min_concepts}
+#' arguments in the respective \code{dna_scale} functions. Setting
+#' \code{constraints} or changing \code{priors} provide another possibility to
 #' improve your results and achieve chain convergence.
-#' 
+#'
 #' @param dna_scale A \code{dna_scale} object.
-#' @param variable Variable for assessing convergence diagnostics. Can either 
-#'   be the value provided in \code{variable1} or \code{variable2} of the 
-#'   \code{dna_scale} functions, or \code{"both"} if both stored variables 
+#' @param variable Variable for assessing convergence diagnostics. Can either
+#'   be the value provided in \code{variable1} or \code{variable2} of the
+#'   \code{dna_scale} functions, or \code{"both"} if both stored variables
 #'   should be analyzed. Defaults to \code{"both"}.
-#' @param method Method for the convergence diagnostics. Supported are 
-#'   \code{"geweke"}, \code{"density"} and \code{"trace"}. Defaults to 
+#' @param method Method for the convergence diagnostics. Supported are
+#'   \code{"geweke"}, \code{"density"} and \code{"trace"}. Defaults to
 #'   \code{"geweke"}.
-#' @param colors Colors for either the \code{density} or \code{trace} plots. 
-#'   \code{TRUE} colors the variables according to the attributes in the 
-#'   object and \code{FALSE} sets colors to black. You can also provide 
-#'   customized colors. Possible options are either providing a single 
-#'   character vector (if you wish to color values in only one color), or a 
-#'   character or numeric vector or data frame of at least the same length as 
-#'   values in the object. If you use a data frame, please provide one column 
-#'   named \code{"names"} that indicates the names of the values and one column 
-#'   named \code{"colors"} that specifies the value colors. Defaults to 
+#' @param colors Colors for either the \code{density} or \code{trace} plots.
+#'   \code{TRUE} colors the variables according to the attributes in the
+#'   object and \code{FALSE} sets colors to black. You can also provide
+#'   customized colors. Possible options are either providing a single
+#'   character vector (if you wish to color values in only one color), or a
+#'   character or numeric vector or data frame of at least the same length as
+#'   values in the object. If you use a data frame, please provide one column
+#'   named \code{"names"} that indicates the names of the values and one column
+#'   named \code{"colors"} that specifies the value colors. Defaults to
 #'   \code{TRUE}.
 #' @param trace_size Size of the trace lines for the \code{traceplots}.
 #' @param nrow Number of rows for the facet plot.
 #' @param ncol Number of columns for the facet plot.
-#' @param facet_page If the number of values to be plotted exceeds the 
-#'   specified number of columns and rows of the facet plot, the plot is split 
+#' @param facet_page If the number of values to be plotted exceeds the
+#'   specified number of columns and rows of the facet plot, the plot is split
 #'   into several pages. \code{facet_page} indicates the page you wish to plot.
-#' @param value Optional character vector if only specific values should be 
+#' @param value Optional character vector if only specific values should be
 #'   analyzed. If specified, \code{variable} will be ignored.
 #'
 #' @examples
 #' \dontrun{
-#' dna_scale <- dna_scale1dbin(connection,
+#' dna_init()
+#' conn <- dna_connection(dna_sample())
+#' dna_scale <- dna_scale1dbin(conn,
 #'                             variable1 = "organization",
 #'                             variable2 = "concept",
 #'                             qualifier = "agreement",
@@ -6334,7 +7256,7 @@ dna_barplot <- function(connection,
 #'                             mcmc_burnin = 2000,
 #'                             mcmc_thin = 10,
 #'                             store_variables = "both")
-#'                             
+#'
 #' dna_convergenceScale(dna_scale,
 #'                      variable = "both",
 #'                      method = "trace",
@@ -6684,14 +7606,13 @@ dna_convergenceScale <- function(dna_scale,
 #'
 #' @examples
 #' \dontrun{
-#' dna_downloadJar()
-#' dna_init("dna-2.0-beta22.jar")
+#' dna_init()
 #' conn <- dna_connection(dna_sample())
 #'
 #' dna_plotFrequency(connection = conn,
-#' of = "agreement",
-#' timewindow = "days",
-#' bar = "stacked")
+#'                   of = "agreement",
+#'                   timewindow = "days",
+#'                   bar = "stacked")
 #' }
 #' @author Johannes B. Gruber
 #' @export

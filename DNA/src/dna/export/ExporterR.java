@@ -1,5 +1,6 @@
 package dna.export;
 
+import java.io.PrintStream;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -10,6 +11,10 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+
+import org.rosuda.JRI.RConsoleOutputStream;
+import org.rosuda.JRI.Rengine;
 
 import dna.SqlConnection;
 import dna.dataStructures.AttributeVector;
@@ -19,6 +24,11 @@ import dna.dataStructures.Statement;
 import dna.dataStructures.StatementType;
 
 public class ExporterR {
+
+	/* =================================================================================================================
+	 * Object definitions; constructor; and helper functions
+	 * =================================================================================================================
+	 */
 
 	// objects for R calls
 	String dbfile;
@@ -36,6 +46,12 @@ public class ExporterR {
 	 * Constructor for external R calls. Load and prepare data for export.
 	 */
 	public ExporterR(String dbtype, String dbfile, String login, String password, boolean verbose) {
+		
+		// divert stdout to R console
+		Rengine r = new Rengine();
+		RConsoleOutputStream rs = new RConsoleOutputStream(r, 0);
+		System.setOut(new PrintStream(rs));
+		
 		this.dbfile = dbfile;
 		this.sql = new SqlConnection(dbtype, this.dbfile, login, password);
 		this.data = sql.getAllData();
@@ -59,8 +75,10 @@ public class ExporterR {
 	
 	/**
 	 * A function for printing details about the dataset. Used by rDNA.
+	 * 
+	 * @return   A string with details about the database.
 	 */
-	public void rShow() {
+	public String rShow() {
 		String statementString = " statements in ";
 		if (this.data.getStatements().size() == 1) {
 			statementString = " statement in ";
@@ -69,17 +87,21 @@ public class ExporterR {
 		if (this.data.getDocuments().size() == 1) {
 			documentString = " document";
 		}
-		System.out.println("DNA database: " + this.dbfile);
-		System.out.println(data.getStatements().size() + statementString + data.getDocuments().size() + documentString);
-		System.out.print("Statement types: ");
+		String s = "DNA database: " + this.dbfile + "\n" + data.getStatements().size() + statementString + data.getDocuments().size() + documentString + "\nStatement types: ";
 		for (int i = 0; i < data.getStatementTypes().size(); i++) {
-			System.out.print(data.getStatementTypes().get(i).getLabel());
+			s = s + data.getStatementTypes().get(i).getLabel();
 			if (i < data.getStatementTypes().size() - 1) {
-				System.out.print(", ");
+				s = s + ", ";
 			}
 		}
-		System.out.print("\n");
+		return s;
 	}
+	
+	
+	/* =================================================================================================================
+	 * Functions for generating and retrieving networks
+	 * =================================================================================================================
+	 */
 	
 	/**
 	 * Compute one-mode or two-mode network matrix based on R arguments.
@@ -130,16 +152,144 @@ public class ExporterR {
 		if (verbose == true) {
 			System.out.print("(1/" + max + "): Processing network options... ");
 		}
-		networkType = formatNetworkType(networkType);
-		StatementType st = processStatementType(networkType, statementType, variable1, variable2, qualifier, qualifierAggregation);
+		
+		// format network type
+		// valid R input: 'eventlist', 'twomode', or 'onemode'
+		// valid Java output: 'Event list', 'Two-mode network', or 'One-mode network'
+		if (networkType.equals("eventlist")) {
+			networkType = "Event list";
+		} else if (networkType.equals("twomode")) {
+			networkType = "Two-mode network";
+		} else if (networkType.equals("onemode")) {
+			networkType = "One-mode network";
+		} else {
+			System.err.println("Network type was not recognized. Use 'twomode', 'onemode', or 'eventlist'.");
+		}
+		
+		// process and check validity of statement type etc.
+		// valid R input for qualifierAggregation: 'ignore', 'combine', 'subtract', 'congruence', or 'conflict'
+		StatementType st = data.getStatementType(statementType);
+		if (st == null) {
+			System.err.println("Statement type '" + statementType + " does not exist!");
+		}
+		
+		if (!st.getVariables().containsKey(variable1)) {
+			System.err.println("Variable 1 ('" + variable1 + "') does not exist in this statement type.");
+		}
+		if (!st.getVariables().get(variable1).equals("short text")) {
+			System.err.println("Variable 1 ('" + variable1 + "') is not a short text variable.");
+		}
+		
+		if (!st.getVariables().containsKey(variable2)) {
+			System.err.println("Variable 2 ('" + variable2 + "') does not exist in this statement type.");
+		}
+		if (!st.getVariables().get(variable2).equals("short text")) {
+			System.err.println("Variable 2 ('" + variable2 + "') is not a short text variable.");
+		}
+		
+		if (!st.getVariables().containsKey(qualifier)) {
+			System.err.println("The qualifier variable ('" + qualifier + "') does not exist in this statement type.");
+		}
+		if (!st.getVariables().get(qualifier).equals("boolean") && !st.getVariables().get(qualifier).equals("integer")) {
+			System.err.println("The qualifier variable ('" + qualifier + "') is not a boolean or integer variable.");
+		}
+		
+		if (!qualifierAggregation.equals("ignore") && !qualifierAggregation.equals("subtract") && !qualifierAggregation.equals("combine")
+				&& !qualifierAggregation.equals("congruence") && !qualifierAggregation.equals("conflict")) {
+			System.err.println("'qualifierAggregation' must be 'ignore', 'combine', 'subtract', 'congruence', or 'conflict'.");
+		}
+		if (qualifierAggregation.equals("combine") && !networkType.equals("Two-mode network")) {
+			System.err.println("qualifierAggregation = 'combine' is only possible with two-mode networks.");
+		}
+		if (qualifierAggregation.equals("congruence") && !networkType.equals("One-mode network")) {
+			System.err.println("qualifierAggregation = 'congruence' is only possible with one-mode networks.");
+		}
+		if (qualifierAggregation.equals("conflict") && !networkType.equals("One-mode network")) {
+			System.err.println("qualifierAggregation = 'conflict' is only possible with one-mode networks.");
+		}
+		
 		boolean ignoreQualifier = qualifier.equals("ignore");
 		int statementTypeId = st.getId();
-		normalization = formatNormalization(networkType, normalization);
-		duplicates = formatDuplicates(duplicates);
 		
-		Date start = formatDate(startDate, startTime);
-		Date stop = formatDate(stopDate, stopTime);
+		// format normalization argument
+		// R input can be: 'no', 'activity', 'prominence', 'average', 'Jaccard', or 'cosine'
+		// formatted Java output can be: 'no', 'activity', 'prominence', 'average activity', 'Jaccard', or 'cosine'
+		if (normalization.equals("jaccard")) {
+			normalization = "Jaccard";
+		}
+		if (normalization.equals("Cosine")) {
+			normalization = "cosine";
+		}
+		if (!normalization.equals("no") && !normalization.equals("activity") && !normalization.equals("prominence") 
+				&& !normalization.equals("average") && !normalization.equals("Jaccard") && !normalization.equals("cosine")) {
+			System.err.println("'normalization' must be 'no', 'activity', 'prominence', 'average', 'Jaccard', or 'cosine'.");
+		}
+		if (normalization.equals("activity") && !networkType.equals("Two-mode network")) {
+			System.err.println("'normalization = 'activity' is only possible with two-mode networks.");
+		}
+		if (normalization.equals("prominence") && !networkType.equals("Two-mode network")) {
+			System.err.println("'normalization = 'prominence' is only possible with two-mode networks.");
+		}
+		if (normalization.equals("average") && !networkType.equals("One-mode network")) {
+			System.err.println("'normalization = 'average' is only possible with one-mode networks.");
+		}
+		if (normalization.equals("Jaccard") && !networkType.equals("One-mode network")) {
+			System.err.println("'normalization = 'Jaccard' is only possible with one-mode networks.");
+		}
+		if (normalization.equals("cosine") && !networkType.equals("One-mode network")) {
+			System.err.println("'normalization = 'cosine' is only possible with one-mode networks.");
+		}
+		if (normalization.equals("average")) {
+			normalization = "average activity";
+		}
 		
+		// format duplicates argument
+		// valid R input: 'include', 'document', 'week', 'month', 'year', or 'acrossrange'
+		// valid Java output: 'include all duplicates', 'ignore per document', 'ignore per calendar week', 'ignore per calendar month', 'ignore per calendar year', or 'ignore across date range'
+		if (!duplicates.equals("include") && !duplicates.equals("document") && !duplicates.equals("week") && !duplicates.equals("month") 
+				&& !duplicates.equals("year") && !duplicates.equals("acrossrange")) {
+			System.err.println("'duplicates' must be 'include', 'document', 'week', 'month', 'year', or 'acrossrange'.");
+		}
+		if (duplicates.equals("include")) {
+			duplicates = "include all duplicates";
+		} else if (duplicates.equals("document")) {
+			duplicates = "ignore per document";
+		} else if (duplicates.equals("week")) {
+			duplicates = "ignore per calendar week";
+		} else if (duplicates.equals("month")) {
+			duplicates = "ignore per calendar month";
+		} else if (duplicates.equals("year")) {
+			duplicates = "ignore per calendar year";
+		} else if (duplicates.equals("acrossrange")) {
+			duplicates = "ignore across date range";
+		}
+
+		// format dates and times with input formats "dd.MM.yyyy" and "HH:mm:ss"
+		DateFormat df = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
+		String startString = startDate + " " + startTime;
+		Date start = null;
+		try {
+			start = df.parse(startString);
+		} catch (ParseException e) {
+			System.err.println("Start date or time is invalid!");
+		}
+		if (!startString.equals(df.format(start))) {
+			startDate = null;
+			System.err.println("Start date or time is invalid!");
+		}
+		String stopString = stopDate + " " + stopTime;
+		Date stop = null;
+		try {
+			stop = df.parse(stopString);
+		} catch (ParseException e) {
+			System.err.println("Stop date or time is invalid!");
+		}
+		if (!stopString.equals(df.format(stop))) {
+			stopDate = null;
+			System.err.println("Stop date or time is invalid!");
+		}
+		
+		// format time window arguments
 		if (timewindow == null || timewindow.startsWith("no")) {
 			timewindow = "no time window";
 		}
@@ -168,8 +318,38 @@ public class ExporterR {
 			timewindow = "using events";
 		}
 		
-		HashMap<String, ArrayList<String>> map = processExcludeVariables(excludeVariables, excludeValues, invertValues, data.getStatements(), 
-				data.getStatements(), data.getDocuments(), statementTypeId, includeIsolates);
+		// process exclude variables: create HashMap with variable:value pairs
+		HashMap<String, ArrayList<String>> map = new HashMap<String, ArrayList<String>>();
+		if (excludeVariables.length > 0) {
+			for (int i = 0; i < excludeVariables.length; i++) {
+				ArrayList<String> values = map.get(excludeVariables[i]);
+				if (values == null) {
+					values = new ArrayList<String>();
+				}
+				if (!values.contains(excludeValues[i])) {
+					values.add(excludeValues[i]);
+				}
+				Collections.sort(values);
+				map.put(excludeVariables[i], values);
+			}
+		}
+		if (invertValues == true) {
+			Iterator<String> mapIterator = map.keySet().iterator();
+			while (mapIterator.hasNext()) {
+				String key = mapIterator.next();
+				ArrayList<String> values = map.get(key);
+				String[] labels = exportHelper.extractLabels(data.getStatements(), data.getStatements(), data.getDocuments(), key, false, statementTypeId, includeIsolates);
+				ArrayList<String> newValues = new ArrayList<String>();
+				for (int i = 0; i < labels.length; i++) {
+					if (!values.contains(labels[i])) {
+						newValues.add(labels[i]);
+					}
+				}
+				map.put(key, newValues);
+			}
+		}
+		
+		// process document-level exclude variables using repeated calls of private function 'processExcludeDocument'
 		ArrayList<String> authorExclude = processExcludeDocument("author", excludeAuthors, invertAuthors, data.getStatements(), data.getStatements(), 
 				data.getDocuments(), statementTypeId, includeIsolates);
 		ArrayList<String> sourceExclude = processExcludeDocument("source", excludeSources, invertSources, data.getStatements(), data.getStatements(),  
@@ -182,7 +362,7 @@ public class ExporterR {
 		if (verbose == true) {
 			System.out.print("Done.\n");
 		}
-		
+
 		// step 2: filter
 		boolean filterEmptyFields = true;
 		if (networkType.equals("Event list")) {
@@ -284,8 +464,92 @@ public class ExporterR {
 			}
 			this.matrix = m;
 		} else if (networkType.equals("Event list")) {
+			// convert list of filtered statements into event list in the form of an Object[], including all statement- and document-level variables
 			this.matrix = null;
-			this.eventListColumnsR = eventListR(filteredStatements, data.getDocuments(), st);
+		    String key, value;
+			Document doc;
+			for (int i = 0; i < filteredStatements.size(); i++) {
+				if (filteredStatements.get(i).getStatementTypeId() != statementTypeId) {
+					throw new IllegalArgumentException("More than one statement type was selected. Cannot export to a spreadsheet!");
+				}
+			}
+
+			// HashMap for fast lookup of document indices by ID
+			HashMap<Integer, Integer> docMap = new HashMap<Integer, Integer>();
+			for (int i = 0; i < data.getDocuments().size(); i++) {
+				docMap.put(data.getDocuments().get(i).getId(), i);
+			}
+			
+			// Get variable names and types of current statement type
+			HashMap<String, String> variables = st.getVariables();
+			Iterator<String> keyIterator;
+			ArrayList<String> variableNames = new ArrayList<String>();
+			ArrayList<String> variableTypes = new ArrayList<String>();
+			keyIterator = variables.keySet().iterator();
+			while (keyIterator.hasNext()){
+				key = keyIterator.next();
+				value = variables.get(key);
+				variableNames.add(key);
+				variableTypes.add(value);
+			}
+			columnNames = new String[variableNames.size()];
+			columnTypes = new String[variableTypes.size()];
+			for (int i = 0; i < variableNames.size(); i++) {
+				columnNames[i] = variableNames.get(i);
+				columnTypes[i] = variableTypes.get(i);
+			}
+			
+			// create array of columns and populate document-level and statement-level columns; leave out variables for now
+			eventListColumnsR = new Object[variableNames.size() + 8];
+			int[] ids = new int[filteredStatements.size()];
+			long[] time = new long[filteredStatements.size()];
+			int[] docId = new int[filteredStatements.size()];
+			String[] docTitle = new String[filteredStatements.size()];
+			String[] author = new String[filteredStatements.size()];
+			String[] source = new String[filteredStatements.size()];
+			String[] section = new String[filteredStatements.size()];
+			String[] type = new String[filteredStatements.size()];
+			for (int i = 0; i < filteredStatements.size(); i++) {
+				ids[i] = filteredStatements.get(i).getId();
+				time[i] = filteredStatements.get(i).getDate().getTime() / 1000;  // convert milliseconds to seconds (since 1/1/1970)
+				docId[i] = filteredStatements.get(i).getDocumentId();
+				doc = data.getDocuments().get(docMap.get(docId[i]));
+				docTitle[i] = doc.getTitle();
+				author[i] = doc.getAuthor();
+				source[i] = doc.getSource();
+				section[i] = doc.getSection();
+				type[i] = doc.getType();
+			}
+			eventListColumnsR[0] = ids;
+			eventListColumnsR[1] = time;
+			eventListColumnsR[2] = docId;
+			eventListColumnsR[3] = docTitle;
+			eventListColumnsR[4] = author;
+			eventListColumnsR[5] = source;
+			eventListColumnsR[6] = section;
+			eventListColumnsR[7] = type;
+			
+			// Now add the variables to the columns array
+			for (int i = 0; i < variableNames.size(); i++) {
+				if (columnTypes[i].equals("short text") || columnTypes[i].equals("long text")) {
+					eventListColumnsR[i + 8] = new String[filteredStatements.size()];
+				} else {
+					eventListColumnsR[i + 8] = new int[filteredStatements.size()];
+				}
+			}
+			for (int i = 0; i < filteredStatements.size(); i++) {
+				for (int j = 0; j < variableNames.size(); j++) {
+					if (columnTypes[j].equals("short text") || columnTypes[j].equals("long text")) {
+						String[] temp = ((String[]) eventListColumnsR[j + 8]);
+						temp[i] = (String) filteredStatements.get(i).getValues().get(columnNames[j]);
+						eventListColumnsR[j + 8] = temp;
+					} else {
+						int[] temp = ((int[]) eventListColumnsR[j + 8]);
+						temp[i] = (int) filteredStatements.get(i).getValues().get(columnNames[j]);
+						eventListColumnsR[j + 8] = temp;
+					}
+				}
+			}
 		}
 		if (verbose == true) {
 			System.out.print("Done.\n");
@@ -297,219 +561,6 @@ public class ExporterR {
 		}
 	}
 
-	/**
-	 * Format the R argument 'networkType' (can be 'eventlist', 'twomode', or 'onemode') to 'Event list', 'Two-mode network', or 'One-mode network'.
-	 * 
-	 * @param networkType   R argument
-	 * @return              formatted string
-	 */
-	private String formatNetworkType(String networkType) {
-		if (networkType.equals("eventlist")) {
-			networkType = "Event list";
-		} else if (networkType.equals("twomode")) {
-			networkType = "Two-mode network";
-		} else if (networkType.equals("onemode")) {
-			networkType = "One-mode network";
-		} else {
-			System.err.println("Network type was not recognized. Use 'twomode', 'onemode', or 'eventlist'.");
-		}
-		return networkType;
-	}
-
-	/**
-	 * Check if variables and statement type (provided as a String) are valid and return statement type.
-	 * 
-	 * @param networkType            Java-DNA-formatted network type String 
-	 * @param statementType          Statement type given as a String
-	 * @param variable1              First variable as a String
-	 * @param variable2              Second variable as a String
-	 * @param qualifier              Qualifier variable as a String
-	 * @param qualifierAggregation   Qualifier aggregation rule as a String ('ignore', 'combine', 'subtract', 'congruence', or 'conflict')
-	 * @return                       StatementType to be used
-	 */
-	private StatementType processStatementType(String networkType, String statementType, String variable1, String variable2, String qualifier, String qualifierAggregation) {
-		StatementType st = data.getStatementType(statementType);
-		if (st == null) {
-			System.err.println("Statement type '" + statementType + " does not exist!");
-		}
-		
-		if (!st.getVariables().containsKey(variable1)) {
-			System.err.println("Variable 1 ('" + variable1 + "') does not exist in this statement type.");
-		}
-		if (!st.getVariables().get(variable1).equals("short text")) {
-			System.err.println("Variable 1 ('" + variable1 + "') is not a short text variable.");
-		}
-		
-		if (!st.getVariables().containsKey(variable2)) {
-			System.err.println("Variable 2 ('" + variable2 + "') does not exist in this statement type.");
-		}
-		if (!st.getVariables().get(variable2).equals("short text")) {
-			System.err.println("Variable 2 ('" + variable2 + "') is not a short text variable.");
-		}
-		
-		if (!st.getVariables().containsKey(qualifier)) {
-			System.err.println("The qualifier variable ('" + qualifier + "') does not exist in this statement type.");
-		}
-		if (!st.getVariables().get(qualifier).equals("boolean") && !st.getVariables().get(qualifier).equals("integer")) {
-			System.err.println("The qualifier variable ('" + qualifier + "') is not a boolean or integer variable.");
-		}
-		
-		if (!qualifierAggregation.equals("ignore") && !qualifierAggregation.equals("subtract") && !qualifierAggregation.equals("combine")
-				&& !qualifierAggregation.equals("congruence") && !qualifierAggregation.equals("conflict")) {
-			System.err.println("'qualifierAggregation' must be 'ignore', 'combine', 'subtract', 'congruence', or 'conflict'.");
-		}
-		if (qualifierAggregation.equals("combine") && !networkType.equals("Two-mode network")) {
-			System.err.println("qualifierAggregation = 'combine' is only possible with two-mode networks.");
-		}
-		if (qualifierAggregation.equals("congruence") && !networkType.equals("One-mode network")) {
-			System.err.println("qualifierAggregation = 'congruence' is only possible with one-mode networks.");
-		}
-		if (qualifierAggregation.equals("conflict") && !networkType.equals("One-mode network")) {
-			System.err.println("qualifierAggregation = 'conflict' is only possible with one-mode networks.");
-		}
-		
-		return st;
-	}
-
-	/**
-	 * Format the normalization R argument.
-	 * 
-	 * @param networkType     Java-DNA-formatted network type String
-	 * @param normalization   R argument String with the normalization type (can be 'no', 'activity', 'prominence', 'average', 'Jaccard', or 'cosine')
-	 * @return                Formatted normalization String for DNA export (can be 'no', 'activity', 'prominence', 'average activity', 'Jaccard', or 'cosine')
-	 */
-	private String formatNormalization(String networkType, String normalization) {
-		if (normalization.equals("jaccard")) {
-			normalization = "Jaccard";
-		}
-		if (normalization.equals("Cosine")) {
-			normalization = "cosine";
-		}
-		if (!normalization.equals("no") && !normalization.equals("activity") && !normalization.equals("prominence") 
-				&& !normalization.equals("average") && !normalization.equals("Jaccard") && !normalization.equals("cosine")) {
-			System.err.println("'normalization' must be 'no', 'activity', 'prominence', 'average', 'Jaccard', or 'cosine'.");
-		}
-		if (normalization.equals("activity") && !networkType.equals("Two-mode network")) {
-			System.err.println("'normalization = 'activity' is only possible with two-mode networks.");
-		}
-		if (normalization.equals("prominence") && !networkType.equals("Two-mode network")) {
-			System.err.println("'normalization = 'prominence' is only possible with two-mode networks.");
-		}
-		if (normalization.equals("average") && !networkType.equals("One-mode network")) {
-			System.err.println("'normalization = 'average' is only possible with one-mode networks.");
-		}
-		if (normalization.equals("Jaccard") && !networkType.equals("One-mode network")) {
-			System.err.println("'normalization = 'Jaccard' is only possible with one-mode networks.");
-		}
-		if (normalization.equals("cosine") && !networkType.equals("One-mode network")) {
-			System.err.println("'normalization = 'cosine' is only possible with one-mode networks.");
-		}
-		if (normalization.equals("average")) {
-			normalization = "average activity";
-		}
-		return normalization;
-	}
-	
-	/**
-	 * Format the duplicates R argument.
-	 * 
-	 * @param duplicates   An input String that can be 'include', 'document', 'week', 'month', 'year', or 'acrossrange'.
-	 * @return             An output String that can be 'include all duplicates', 'ignore per document', 'ignore per calendar week', 'ignore per calendar month', 'ignore per calendar year', or 'ignore across date range'
-	 */
-	private String formatDuplicates(String duplicates) {
-		if (!duplicates.equals("include") && !duplicates.equals("document") && !duplicates.equals("week") && !duplicates.equals("month") 
-				&& !duplicates.equals("year") && !duplicates.equals("acrossrange")) {
-			System.err.println("'duplicates' must be 'include', 'document', 'week', 'month', 'year', or 'acrossrange'.");
-		}
-		if (duplicates.equals("include")) {
-			duplicates = "include all duplicates";
-		} else if (duplicates.equals("document")) {
-			duplicates = "ignore per document";
-		} else if (duplicates.equals("week")) {
-			duplicates = "ignore per calendar week";
-		} else if (duplicates.equals("month")) {
-			duplicates = "ignore per calendar month";
-		} else if (duplicates.equals("year")) {
-			duplicates = "ignore per calendar year";
-		} else if (duplicates.equals("acrossrange")) {
-			duplicates = "ignore across date range";
-		}
-		
-		return duplicates;
-	}
-	
-	/**
-	 * Convert a date String of format "dd.MM.yyyy" and a time String of format "HH:mm:ss" to a Date object.
-	 * 
-	 * @param dateString    date String of format "dd.MM.yyyy"
-	 * @param timeString    time String of format "HH:mm:ss"
-	 * @return              Date object containing both the date and the time
-	 */
-	private Date formatDate(String dateString, String timeString) {
-		String s = dateString + " " + timeString;
-		DateFormat df = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
-		Date d = null;
-		try {
-			d = df.parse(s);
-		} catch (ParseException e) {
-			System.err.println("Date or time is invalid!");
-		}
-		if (!s.equals(df.format(d))) {
-			d = null;
-			System.err.println("Date or time is invalid!");
-		}
-		return d;
-	}
-	
-	/**
-	 * Convert a String array of variables and another one of values to be excluded from export into an array list, after considering the invert argument.
-	 * 
-	 * @param excludeVariables     A String array with n elements, indicating the variable of the n'th value
-	 * @param excludeValues        A String array with n elements, indicating the value pertaining to the n'th variable String
-	 * @param invertValues         boolean indicating whether the values should be included (= true) rather than excluded
-	 * @param statements           ArrayList<String> of filtered statements
-	 * @param originalStatements   Original ArrayList<String> of statements before applying the filter
-	 * @param documents            ArrayList<Document> containing all documents in which the statements are embedded
-	 * @param statementTypeId      int ID of the statement type to which the variables belong
-	 * @param isolates             Should isolates be included in the network export?
-	 * @return
-	 */
-	private HashMap<String, ArrayList<String>> processExcludeVariables(String[] excludeVariables, String[] excludeValues, 
-			boolean invertValues, ArrayList<Statement> statements, ArrayList<Statement> originalStatements, 
-			ArrayList<Document> documents, int statementTypeId, boolean isolates) {
-		
-		HashMap<String, ArrayList<String>> map = new HashMap<String, ArrayList<String>>();
-		if (excludeVariables.length > 0) {
-			for (int i = 0; i < excludeVariables.length; i++) {
-				ArrayList<String> values = map.get(excludeVariables[i]);
-				if (values == null) {
-					values = new ArrayList<String>();
-				}
-				if (!values.contains(excludeValues[i])) {
-					values.add(excludeValues[i]);
-				}
-				Collections.sort(values);
-				map.put(excludeVariables[i], values);
-			}
-		}
-		if (invertValues == true) {
-			Iterator<String> mapIterator = map.keySet().iterator();
-			while (mapIterator.hasNext()) {
-				String key = mapIterator.next();
-				ArrayList<String> values = map.get(key);
-				String[] labels = exportHelper.extractLabels(statements, originalStatements, documents, key, false, statementTypeId, isolates);
-				ArrayList<String> newValues = new ArrayList<String>();
-				for (int i = 0; i < labels.length; i++) {
-					if (!values.contains(labels[i])) {
-						newValues.add(labels[i]);
-					}
-				}
-				map.put(key, newValues);
-			}
-		}
-		return map;
-	}
-	
 	/**
 	 * Process exclude arguments for a document-level variable for R export.
 	 * 
@@ -546,109 +597,132 @@ public class ExporterR {
 		
 		return exclude;
 	}
-	
-	/**
-	 * This function accepts a list of statements that should be included in the relational event export, 
-	 * and it returns the variables of all statements, along with the statement ID and a date/time stamp. 
-	 * There is one statement per row, and the number of columns is the number of variables present in 
-	 * the statement type plus 8 columns that represent statement ID and document-level variables.
-	 * 
-	 * @param statements	 An array list of {@link Statement}s (of the same statement type) that should be exported.
-	 * @param documents      An array list of {@link Document}s in which the statements are embedded.
-	 * @param statementType  The statement type corresponding to the statements.
-	 */
-	private Object[] eventListR(ArrayList<Statement> statements, ArrayList<Document> documents, StatementType statementType) {
-		String key, value;
-		Document doc;
-		int statementTypeId = statementType.getId();
-		for (int i = 0; i < statements.size(); i++) {
-			if (statements.get(i).getStatementTypeId() != statementTypeId) {
-				throw new IllegalArgumentException("More than one statement type was selected. Cannot export to a spreadsheet!");
-			}
-		}
 
-		// HashMap for fast lookup of document indices by ID
-		HashMap<Integer, Integer> docMap = new HashMap<Integer, Integer>();
-		for (int i = 0; i < documents.size(); i++) {
-			docMap.put(documents.get(i).getId(), i);
-		}
-		
-		// Get variable names and types of current statement type
-		HashMap<String, String> variables = statementType.getVariables();
-		Iterator<String> keyIterator;
-		ArrayList<String> variableNames = new ArrayList<String>();
-		ArrayList<String> variableTypes = new ArrayList<String>();
-		keyIterator = variables.keySet().iterator();
-		while (keyIterator.hasNext()){
-			key = keyIterator.next();
-			value = variables.get(key);
-			variableNames.add(key);
-			variableTypes.add(value);
-		}
-		columnNames = new String[variableNames.size()];
-		columnTypes = new String[variableTypes.size()];
-		for (int i = 0; i < variableNames.size(); i++) {
-			columnNames[i] = variableNames.get(i);
-			columnTypes[i] = variableTypes.get(i);
-		}
-		
-		// create array of columns and populate document-level and statement-level columns; leave out variables for now
-		Object[] columns = new Object[variableNames.size() + 8];
-		int[] ids = new int[statements.size()];
-		long[] time = new long[statements.size()];
-		int[] docId = new int[statements.size()];
-		String[] docTitle = new String[statements.size()];
-		String[] author = new String[statements.size()];
-		String[] source = new String[statements.size()];
-		String[] section = new String[statements.size()];
-		String[] type = new String[statements.size()];
-		for (int i = 0; i < statements.size(); i++) {
-			ids[i] = statements.get(i).getId();
-			time[i] = statements.get(i).getDate().getTime() / 1000;  // convert milliseconds to seconds (since 1/1/1970)
-			docId[i] = statements.get(i).getDocumentId();
-			doc = documents.get(docMap.get(docId[i]));
-			docTitle[i] = doc.getTitle();
-			author[i] = doc.getAuthor();
-			source[i] = doc.getSource();
-			section[i] = doc.getSection();
-			type[i] = doc.getType();
-		}
-		columns[0] = ids;
-		columns[1] = time;
-		columns[2] = docId;
-		columns[3] = docTitle;
-		columns[4] = author;
-		columns[5] = source;
-		columns[6] = section;
-		columns[7] = type;
-		
-		// Now add the variables to the columns array
-		for (int i = 0; i < variableNames.size(); i++) {
-			if (columnTypes[i].equals("short text") || columnTypes[i].equals("long text")) {
-				columns[i + 8] = new String[statements.size()];
-			} else {
-				columns[i + 8] = new int[statements.size()];
-			}
-		}
-		for (int i = 0; i < statements.size(); i++) {
-			for (int j = 0; j < variableNames.size(); j++) {
-				if (columnTypes[j].equals("short text") || columnTypes[j].equals("long text")) {
-					String[] temp = ((String[]) columns[j + 8]);
-					temp[i] = (String) statements.get(i).getValues().get(columnNames[j]);
-					columns[j + 8] = temp;
-				} else {
-					int[] temp = ((int[]) columns[j + 8]);
-					temp[i] = (int) statements.get(i).getValues().get(columnNames[j]);
-					columns[j + 8] = temp;
-				}
-			}
-		}
-		
-		return columns;
+	/**
+	 * Return variable names in this.eventListColumnsR
+	 * 
+	 * @return   array of Strings with variable names
+	 */
+	public String[] getEventListColumnsRNames() {
+		return columnNames;
+	}
+
+	/**
+	 * Return variable types in this.eventListColumnsR
+	 * 
+	 * @return   array of Strings with variable types
+	 */
+	public String[] getEventListColumnsRTypes() {
+		return columnTypes;
 	}
 	
 	/**
-	 * Retrieve attributes for a specific variable defined in a statement type.
+	 * Return Object[] from this.eventListColumnsR
+	 * 
+	 * @return   array of array of different data types, which represent the columns
+	 */
+	public Object[] getEventListColumnsR() {
+		return eventListColumnsR;
+	}
+	
+	/**
+	 * Return double[][] from this.matrix.
+	 * 
+	 * @return   network matrix
+	 */
+	public double[][] getMatrix() {
+		return matrix.getMatrix();
+	}
+	
+	/**
+	 * Return row names from this.matrix.
+	 * 
+	 * @return   String array of node names for the row variable.
+	 */
+	public String[] getRowNames() {
+		return matrix.getRownames();
+	}
+	
+	/**
+	 * Return column names from this.matrix.
+	 * 
+	 * @return   String array of node names for the column variable.
+	 */
+	public String[] getColumnNames() {
+		return matrix.getColnames();
+	}
+	
+	/**
+	 * Return a single matrix in this.timeWindowMatrices.
+	 * 
+	 * @return   double[][] matrix
+	 */
+	public double[][] getTimeWindowNetwork(int t) {
+		return this.timeWindowMatrices.get(t).getMatrix();
+	}
+
+	/**
+	 * Return the row names of a single matrix in this.timeWindowMatrices.
+	 * 
+	 * @return   String[] row names
+	 */
+	public String[] getTimeWindowRowNames(int t) {
+		return timeWindowMatrices.get(t).getRownames();
+	}
+
+	/**
+	 * Return the column names of a single matrix in this.timeWindowMatrices.
+	 * 
+	 * @return   String[] column names
+	 */
+	public String[] getTimeWindowColumnNames(int t) {
+		return timeWindowMatrices.get(t).getColnames();
+	}
+	
+	/**
+	 * Return time labels corresponding to a time window sequence.
+	 * 
+	 * @return   array of Unix times as seconds since 1/1/1970
+	 * @throws Exception 
+	 */
+	public long[] getTimeWindowTimes() throws Exception {
+		long[] times = new long[timeWindowMatrices.size()];
+		if (times.length > 0) {
+			for (int i = 0; i < timeWindowMatrices.size(); i++) {
+				times[i] = (long) (timeWindowMatrices.get(i).getDate().getTime() / 1000);
+			}
+		} else {
+			throw new Exception("Not a single network matrix has been generated. Does the time window size exceed the time range?");
+		}
+		return times;
+	}
+
+	/**
+	 * Return numbers of statements corresponding to a time window sequence.
+	 * 
+	 * @return   array of integers representing how many statements a time window network is composed of
+	 * @throws Exception 
+	 */
+	public int[] getTimeWindowNumStatements() throws Exception {
+		int[] numStatements = new int[timeWindowMatrices.size()];
+		if (numStatements.length > 0) {
+			for (int i = 0; i < timeWindowMatrices.size(); i++) {
+				numStatements[i] = timeWindowMatrices.get(i).getNumStatements();
+			}
+		} else {
+			throw new Exception("Not a single network matrix has been generated. Does the time window size exceed the time range?");
+		}
+		return numStatements;
+	}
+
+	
+	/* =================================================================================================================
+	 * Functions for managing attributes
+	 * =================================================================================================================
+	 */
+	
+	/**
+	 * Retrieve attributes for a specific variable defined in a statement type (here: definition for String statement type label).
 	 * 
 	 * @param statementTypeLabel  Name of the statement type in which the variable is defined. Make sure there are no duplicate names!
 	 * @param variable            Variable name for which the values and attributes should be retrieved.
@@ -665,7 +739,7 @@ public class ExporterR {
 	}
 
 	/**
-	 * Retrieve attributes for a specific variable defined in a statement type.
+	 * Retrieve attributes for a specific variable defined in a statement type (here: definition for int statement type ID).
 	 * 
 	 * @param statementTypeId     ID of the statement type in which the variable is defined.
 	 * @param variable            Variable name for which the values and attributes should be retrieved.
@@ -1078,6 +1152,7 @@ public class ExporterR {
 	
 	/**
 	 * Remove an attribute based on its value and ID.
+	 * 
 	 * @param statementTypeId   Statement type ID associated with the attribute.
 	 * @param variable          Variable contained in the statement ID that is associated with the attribute.
 	 * @param value             String value of the attribute to be removed.
@@ -1148,124 +1223,13 @@ public class ExporterR {
 			System.err.println("Removal of attribute " + id + ": attribute was not removed because it is used in existing statements.");
 		}
 	}
-	
-	/**
-	 * Return variable names in this.eventListColumnsR
-	 * 
-	 * @return   array of Strings with variable names
-	 */
-	public String[] getEventListColumnsRNames() {
-		return columnNames;
-	}
 
-	/**
-	 * Return variable types in this.eventListColumnsR
-	 * 
-	 * @return   array of Strings with variable types
-	 */
-	public String[] getEventListColumnsRTypes() {
-		return columnTypes;
-	}
 	
-	/**
-	 * Return Object[] from this.eventListColumnsR
-	 * 
-	 * @return   array of array of different data types, which represent the columns
+	/* =================================================================================================================
+	 * Functions for managing documents
+	 * =================================================================================================================
 	 */
-	public Object[] getEventListColumnsR() {
-		return eventListColumnsR;
-	}
 	
-	/**
-	 * Return double[][] from this.matrix.
-	 * 
-	 * @return   network matrix
-	 */
-	public double[][] getMatrix() {
-		return matrix.getMatrix();
-	}
-	
-	/**
-	 * Return row names from this.matrix.
-	 * 
-	 * @return   String array of node names for the row variable.
-	 */
-	public String[] getRowNames() {
-		return matrix.getRownames();
-	}
-	
-	/**
-	 * Return column names from this.matrix.
-	 * 
-	 * @return   String array of node names for the column variable.
-	 */
-	public String[] getColumnNames() {
-		return matrix.getColnames();
-	}
-	
-	/**
-	 * Return a single matrix in this.timeWindowMatrices.
-	 * 
-	 * @return   double[][] matrix
-	 */
-	public double[][] getTimeWindowNetwork(int t) {
-		return this.timeWindowMatrices.get(t).getMatrix();
-	}
-
-	/**
-	 * Return the row names of a single matrix in this.timeWindowMatrices.
-	 * 
-	 * @return   String[] row names
-	 */
-	public String[] getTimeWindowRowNames(int t) {
-		return timeWindowMatrices.get(t).getRownames();
-	}
-
-	/**
-	 * Return the column names of a single matrix in this.timeWindowMatrices.
-	 * 
-	 * @return   String[] column names
-	 */
-	public String[] getTimeWindowColumnNames(int t) {
-		return timeWindowMatrices.get(t).getColnames();
-	}
-	
-	/**
-	 * Return time labels corresponding to a time window sequence.
-	 * 
-	 * @return   array of Unix times as seconds since 1/1/1970
-	 * @throws Exception 
-	 */
-	public long[] getTimeWindowTimes() throws Exception {
-		long[] times = new long[timeWindowMatrices.size()];
-		if (times.length > 0) {
-			for (int i = 0; i < timeWindowMatrices.size(); i++) {
-				times[i] = (long) (timeWindowMatrices.get(i).getDate().getTime() / 1000);
-			}
-		} else {
-			throw new Exception("Not a single network matrix has been generated. Does the time window size exceed the time range?");
-		}
-		return times;
-	}
-
-	/**
-	 * Return numbers of statements corresponding to a time window sequence.
-	 * 
-	 * @return   array of integers representing how many statements a time window network is composed of
-	 * @throws Exception 
-	 */
-	public int[] getTimeWindowNumStatements() throws Exception {
-		int[] numStatements = new int[timeWindowMatrices.size()];
-		if (numStatements.length > 0) {
-			for (int i = 0; i < timeWindowMatrices.size(); i++) {
-				numStatements[i] = timeWindowMatrices.get(i).getNumStatements();
-			}
-		} else {
-			throw new Exception("Not a single network matrix has been generated. Does the time window size exceed the time range?");
-		}
-		return numStatements;
-	}
-
 	/**
 	 * Retrieve an object array of all document data for R.
 	 * 
@@ -1383,8 +1347,9 @@ public class ExporterR {
 					}
 					if (!containsStatements) {
 						if (simulate == false) {
-							this.data.getDocuments().remove(j);
-							this.sql.removeDocument(this.data.getDocuments().get(j).getId());
+							int docId = this.data.getDocuments().get(j).getId();
+							this.data.removeDocument(docId);
+							this.sql.removeDocument(docId);
 						}
 						updateCountDeleted++;
 					} else {
@@ -1611,6 +1576,1185 @@ public class ExporterR {
 			}
 		} else {
 			System.err.println("Removal of Document " + id + ": document contains statements and was not removed.");
+		}
+	}
+
+	
+	/* =================================================================================================================
+	 * Functions for managing statements
+	 * =================================================================================================================
+	 */
+
+	/**
+	 * Retrieve an object array of all statement data for R using a statement type label.
+	 * 
+	 * @param statementType  The statement type name for which the statements should be retrieved.
+	 * @return               An object array with the different slots for the variables.
+	 * @throws Exception 
+	 */
+	public Object[] getStatements(String statementType) throws Exception {
+		try {
+			int statementTypeId = this.data.getStatementType(statementType).getId();
+			Object[] objects = getStatements(statementTypeId);
+			return objects;
+		} catch (NullPointerException npe) {
+			throw new Exception("Statement type '" + statementType + "' could not be found.");
+		}
+	}
+	
+	/**
+	 * Retrieve an object array of all statement data for R using a statement type ID.
+	 * 
+	 * @param statementTypeId  The statement type ID for which the statements should be retrieved.
+	 * @return                 An object array with the different slots for the variables.
+	 */
+	public Object[] getStatements(int statementTypeId) {
+		ArrayList<Statement> sl = this.data.getStatementsByStatementTypeId(statementTypeId);
+		int n = sl.size();
+		int[] statementIds = new int[n];
+		int[] documentIds = new int[n];
+		int[] startCarets = new int[n];
+		int[] endCarets = new int[n];
+		int[] statementTypeIds = new int[n];
+		int[] coders = new int[n];
+		Statement s;
+		for (int i = 0; i < n; i++) {
+			s = sl.get(i);
+			statementIds[i] = s.getId();
+			documentIds[i] = s.getDocumentId();
+			startCarets[i] = s.getStart();
+			endCarets[i] = s.getStop();
+			statementTypeIds[i] = statementTypeId;
+			coders[i] = s.getCoder();
+		}
+
+		StatementType st = this.data.getStatementTypeById(statementTypeId);
+		Object[] object = new Object[6 + st.getVariables().size()];
+		object[0] = statementIds;
+		object[1] = documentIds;
+		object[2] = startCarets;
+		object[3] = endCarets;
+		object[4] = statementTypeIds;
+		object[5] = coders;
+		
+		int counter = 5;
+		String key, value;
+		Iterator<String> iterator = st.getVariables().keySet().iterator();
+		while (iterator.hasNext()) {
+			counter++;
+			key = iterator.next();
+			value = st.getVariables().get(key);
+			if (value.equals("short text") || value.equals("long text")) {
+				String[] var = new String[n];
+				for (int i = 0; i < n; i++) {
+					var[i] = (String) sl.get(i).getValues().get(key);
+				}
+				object[counter] = var;
+			} else {
+				int[] var = new int[n];
+				for (int i = 0; i < n; i++) {
+					var[i] = (int) sl.get(i).getValues().get(key);
+				}
+				object[counter] = var;
+			}
+		}
+		
+		return object;
+	}
+	
+	/**
+	 * Update the list of statements based on an array of arrays for the statement data.
+	 * 
+	 * @param statements  Array of objects containing statement IDs, document IDs, start carets, end carets, statement type IDs, coders, and further variables defined in the statement type.
+	 * @param simulate    If true, changes are not actually carried out.
+	 * @param verbose     Should statistics on updating process be reported?
+	 * @throws Exception
+	 */
+	public void setStatements(Object[] statements, boolean simulate, boolean verbose) throws Exception {
+		int[] id = (int[]) statements[0];
+		int[] documentId = (int[]) statements[1];
+		int[] startCaret = (int[]) statements[2];
+		int[] endCaret = (int[]) statements[3];
+		int[] statementTypeIDs = (int[]) statements[4]; // deviate slightly from naming convention here because 'statementTypeId' will be used later for only the first value
+		int[] coder = (int[]) statements[5];
+
+		int updateCountDeleted = 0;
+		int updateCountNewStatements = 0;
+		int updateCountDocumentId = 0;
+		int updateCountStartCaret = 0;
+		int updateCountEndCaret = 0;
+		int updateCountCoder = 0;
+		int numVar = statements.length - 6;
+		int[] updateCountVariables = new int[numVar];
+
+		ArrayList<ArrayList<String>> addedAttributes = new ArrayList<>();
+		for (int i = 0; i < numVar; i++) {
+			addedAttributes.add(new ArrayList<String>());
+		}
+		
+		if (verbose == true) {
+			if (simulate == true) {
+				System.out.println("Simulation mode: no actual changes are made to the database!");
+			} else {
+				System.out.println("Changes will be written both in memory and to the SQL database!");
+			}
+		}
+		
+		// find out which variables are in the table and what data types they have, based on the first entry
+		String[] varNames = new String[numVar];
+		String[] varTypes = new String[numVar];
+		int statementTypeId = statementTypeIDs[0];
+		StatementType st;
+		try {
+			st = this.data.getStatementTypeById(statementTypeId);
+		} catch (NullPointerException npe) {
+			throw new Exception("Statement type ID of the first statement was not found in the database. Aborting.");
+		}
+		LinkedHashMap<String, String> variables = st.getVariables();
+		Iterator<String> iterator = variables.keySet().iterator();
+		int counter = 0;
+		while (iterator.hasNext()) {
+			String key = iterator.next();
+			varNames[counter] = key;
+			varTypes[counter] = variables.get(key);
+			counter++;
+		}
+		if (counter != numVar) {
+			throw new Exception("Number of variables in the data frame does not match the number of variables in the statement type definition. Aborting.");
+		}
+		
+		// delete statements that are not in the input array 'statements'
+		if (this.data.getStatements().size() > 0) {
+			boolean delete;
+			for (int j = this.data.getStatements().size() - 1; j > -1; j--) {
+				if (this.data.getStatements().get(j).getStatementTypeId() == statementTypeId) {
+					delete = true;
+					for (int i = 0; i < id.length; i++) {
+						if (this.data.getStatements().get(j).getId() == id[i]) {
+							delete = false;
+						}
+					}
+					if (delete == true) {
+						if (verbose == true) {
+							int tempId = this.data.getStatements().get(j).getId();
+							System.out.print("  - Deleting statement " + tempId + "... ");
+						}
+						if (simulate == false) {
+							int statementId = this.data.getStatements().get(j).getId();
+							this.data.removeStatement(statementId);
+							this.sql.removeStatement(statementId);
+						}
+						if (verbose == true) {
+							System.out.println("Done.");
+						}
+						updateCountDeleted++;
+					}
+				}
+			}
+		}
+		
+		// add or update statements
+		for (int i = 0; i < id.length; i++) {
+			boolean update = false;
+
+			// check if statement ID exists
+			int foundIndex = -1;
+			for (int j = 0; j < this.data.getStatements().size(); j++) {
+				if (id[i] == this.data.getStatements().get(j).getId()) {
+					foundIndex = j;
+				}
+			}
+			
+			// check if coder field is valid
+			if (this.data.getCoderById(coder[i]) == null) {
+				System.err.println("Statement ID " + id[i] + ": coder ID is invalid. Skipping this statement.");
+			}
+
+			// check if the document ID is valid
+			if (this.data.getDocument(documentId[i]) == null) {
+				System.err.println("Statement ID " + id[i] + ": document ID was not found in the database. Skipping this statement.");
+			}
+						
+			// check if start caret < end caret
+			if (startCaret[i] >= endCaret[i]) {
+				System.err.println("Statement ID " + id[i] + ": end caret is not greater than the start caret, meaning the statement would have zero or negative length. Skipping this statement.");
+			}
+			
+			// check if document length is shorter than the supplied start caret
+			if (this.data.getDocument(documentId[i]).getText().length() - 1 < startCaret[i]) {
+				System.err.println("Statement ID " + id[i] + ": start caret would be after the last character of the document. Skipping this statement.");
+			}
+
+			// check if document length is shorter than the supplied end caret
+			if (this.data.getDocument(documentId[i]).getText().length() < endCaret[i]) {
+				System.err.println("Statement ID " + id[i] + ": end caret would be more than one character after the last character of the document. Skipping this statement.");
+			}
+			
+			// check if statement type matches the first statement type in the 'statements' data frame
+			if (statementTypeId != statementTypeIDs[i]) {
+				System.err.println("Statement ID " + id[i] + ": statement type ID is not identical to the first statement type ID in the data frame. Skipping this statement.");
+			}
+			
+			// check if boolean variables are indeed 0 or 1
+			for (int j = 0; j < numVar; j++) {
+				if (varTypes[j].equals("boolean") && ((int[]) statements[j + 6])[i] != 0 && ((int[]) statements[j + 6])[i] != 1) {
+					System.err.println("Statement ID " + id[i] + ": variable '" + varNames[j] + "' is not 0 or 1. Skipping this statement.");
+				}
+			}
+			
+			if (foundIndex > -1) { // update (rather than add)
+				if (this.data.getStatements().get(foundIndex).getStart() != startCaret[i]) {
+					if (simulate == false) {
+						this.data.getStatements().get(foundIndex).setStart(startCaret[i]);
+					}
+					update = true;
+					updateCountStartCaret++;
+				}
+				if (this.data.getStatements().get(foundIndex).getStop() != endCaret[i]) {
+					if (simulate == false) {
+						this.data.getStatements().get(foundIndex).setStop(endCaret[i]);
+					}
+					update = true;
+					updateCountEndCaret++;
+				}
+				if (this.data.getStatements().get(foundIndex).getDocumentId() != documentId[i]) {
+					if (simulate == false) {
+						this.data.getStatements().get(foundIndex).setDocumentId(documentId[i]);
+					}
+					update = true;
+					updateCountDocumentId++;
+				}
+				if (this.data.getStatements().get(foundIndex).getCoder() != coder[i]) {
+					if (simulate == false) {
+						this.data.getStatements().get(foundIndex).setCoder(coder[i]);
+					}
+					update = true;
+					updateCountCoder++;
+				}
+				
+				// go through remaining variables and update where necessary
+				for (int j = 0; j < numVar; j++) {
+					if (varTypes[j].equals("short text") || varTypes[j].equals("long text")) {
+						String s = ((String[]) statements[j + 6])[i];
+						if (!this.data.getStatements().get(foundIndex).getValues().get(varNames[j]).equals(s)) {
+							if (simulate == false) {
+								// update variable in the database (in memory)
+								this.data.getStatements().get(foundIndex).getValues().put(varNames[j], s);
+							}
+							// also add a new attribute if the value doesn't exist yet in the database (in memory and SQL)
+							if (this.data.getAttributeId(s, varNames[j], statementTypeId) == -1 && !addedAttributes.get(j).contains(s)) {
+								if (verbose == true) {
+									System.out.print("  - New attribute for variable '" + varNames[j] + "': '" + s + "'... ");
+								}
+								int attributeId = this.data.generateNewId("attributes");
+								AttributeVector av = new AttributeVector(attributeId, s, "#000000", "", "", "", "", statementTypeId, varNames[j]);
+								if (simulate == false) {
+									this.data.attributes.add(av);
+									Collections.sort(this.data.getAttributes());
+									this.sql.upsertAttributeVector(av);
+								}
+								addedAttributes.get(j).add(s); // save added attributes in a list so they are not added multiple times in simulation mode
+								if (verbose == true) {
+									System.out.println("Done.");
+								}
+							}
+							update = true;
+							updateCountVariables[j]++;
+						}
+					} else {
+						if ((int) this.data.getStatements().get(foundIndex).getValues().get(varNames[j]) != ((int[]) statements[j + 6])[i]) {
+							if (simulate == false) {
+								this.data.getStatements().get(foundIndex).getValues().put(varNames[j], ((int[]) statements[j + 6])[i]);
+							}
+							update = true;
+							updateCountVariables[j]++;
+						}
+					}
+				}
+
+				if (update == true) {
+					if (verbose == true) {
+						System.out.print("  - Updating statement " + this.data.getStatements().get(foundIndex).getId() + "... ");
+					}
+					if (simulate == false) {
+						this.sql.upsertStatement(this.data.getStatements().get(foundIndex), st.getVariables());
+					}
+					if (verbose == true) {
+						System.out.println("Done.");
+					}
+				}
+			} else { // add (rather than update)
+				int newId = this.data.generateNewId("statements");
+				Statement statement = new Statement(newId, documentId[i], startCaret[i], endCaret[i], this.data.getDocument(documentId[i]).getDate(), statementTypeId, coder[i]);
+				for (int j = 0; j < numVar; j++) {
+					if (varTypes[j].equals("short text") || varTypes[j].equals("long text")) {
+						String s = ((String[]) statements[j + 6])[i];
+
+						// put value in statement (in memory)
+						statement.getValues().put(varNames[j], s);
+
+						// add a new attribute if the value doesn't exist yet in the database (in memory and SQL)
+						if (this.data.getAttributeId(s, varNames[j], statementTypeId) == -1 && !addedAttributes.get(j).contains(s)) {
+							if (verbose == true) {
+								System.out.print("  - New attribute for variable '" + varNames[j] + "': '" + s + "'... ");
+							}
+							int attributeId = this.data.generateNewId("attributes");
+							AttributeVector av = new AttributeVector(attributeId, s, "#000000", "", "", "", "", statementTypeId, varNames[j]);
+							if (simulate == false) {
+								this.data.attributes.add(av);
+								Collections.sort(this.data.getAttributes());
+								this.sql.upsertAttributeVector(av);
+							}
+							addedAttributes.get(j).add(s); // save added attributes in a list so they are not added multiple times in simulation mode
+							if (verbose == true) {
+								System.out.println("Done.");
+							}
+						}
+					} else { // attributes only exist for short or long text variables
+						statement.getValues().put(varNames[j], ((int[]) statements[j + 6])[i]);
+					}
+				}
+				if (verbose == true) {
+					System.out.print("  - Adding statement... ");
+				}
+				if (simulate == false) {
+					this.data.addStatement(statement);
+					System.out.print("New statement ID: " + statement.getId() + "... ");
+					this.sql.addStatement(statement, st.getVariables());
+				}
+				if (verbose == true) {
+					System.out.println("Done.");
+				}
+				updateCountNewStatements++;
+			}
+		}
+
+		// report statistics
+		if (verbose == true) {
+			System.out.println("New statements: " + updateCountNewStatements);
+			System.out.println("Deleted statements: " + updateCountDeleted);
+			System.out.println("Document IDs updated: " + updateCountDocumentId);
+			System.out.println("Start carets updated: " + updateCountStartCaret);
+			System.out.println("End carets updated: " + updateCountEndCaret);
+			System.out.println("Coders updated: " + updateCountCoder);
+			for (int i = 0; i < numVar; i++) {
+				System.out.println("Updated variable '" + varNames[i] + "': " + updateCountVariables[i]);
+			}
+		}
+	}
+	
+	/**
+	 * Wrapper for the {@link addStatement} function. This function is identical but specifies the statement type as a 
+	 * String label instead of the statement type ID AND specifies only a single variable name (because there is only 
+	 * one variable defined in the statement type).
+	 * 
+	 * @param documentId       The document ID of the document to which the statement should be added.
+	 * @param startCaret       The start position of the statement in the document.
+	 * @param endCaret         The stop position of the statement in the document.
+	 * @param statementType    The label of the statement type of which the statement to be created is an instance.
+	 * @param coder            The ID of the coder that adds the current statement.
+	 * @param varName          A single variable names to which the values should be added (in case there is only one single variable present).
+	 * @param values           The values to be added to the statement variables as an {@link Object} array.
+	 * @param verbose          Report feedback to the console?
+	 * @return                 A new ID of the statement that was added.
+	 * @throws Exception
+	 */
+	public int addStatement(int documentId, int startCaret, int endCaret, String statementType, int coder, String varName, Object[] values, boolean verbose) {
+		int statementTypeId = -1;
+		try {
+			statementTypeId = this.data.getStatementType(statementType).getId();
+		} catch (NullPointerException npe) {
+			System.err.println("Statement could not be added because the statement type is unknown.");
+			return -1;
+		}
+		String[] varNames = new String[] { varName };  // convert string into string array
+		return addStatement(documentId, startCaret, endCaret, statementTypeId, coder, varNames, values, verbose);
+	}
+	
+	/**
+	 * Wrapper for the {@link addStatement} function. This function is identical but specifies the statement type as a String label instead of the statement type ID.
+	 * 
+	 * @param documentId       The document ID of the document to which the statement should be added.
+	 * @param startCaret       The start position of the statement in the document.
+	 * @param endCaret         The stop position of the statement in the document.
+	 * @param statementType    The label of the statement type of which the statement to be created is an instance.
+	 * @param coder            The ID of the coder that adds the current statement.
+	 * @param varNames         The variable names to which the values should be added, in the same order as the values.
+	 * @param values           The values to be added to the statement variables as an {@link Object} array.
+	 * @param verbose          Report feedback to the console?
+	 * @return                 A new ID of the statement that was added.
+	 * @throws Exception
+	 */
+	public int addStatement(int documentId, int startCaret, int endCaret, String statementType, int coder, String[] varNames, Object[] values, boolean verbose) {
+		int statementTypeId = -1;
+		try {
+			statementTypeId = this.data.getStatementType(statementType).getId();
+		} catch (NullPointerException npe) {
+			System.err.println("Statement could not be added because the statement type is unknown.");
+			return -1;
+		}
+		return addStatement(documentId, startCaret, endCaret, statementTypeId, coder, varNames, values, verbose);
+	}
+
+	/**
+	 * Wrapper for the {@link addStatement} function. This function is identical but specifies only a single variable 
+	 * name (because there is only one variable defined in the statement type).
+	 * 
+	 * @param documentId       The document ID of the document to which the statement should be added.
+	 * @param startCaret       The start position of the statement in the document.
+	 * @param endCaret         The stop position of the statement in the document.
+	 * @param statementTypeId  The ID of the statement type of which the statement to be created is an instance.
+	 * @param coder            The ID of the coder that adds the current statement.
+	 * @param varName          A single variable names to which the values should be added (in case there is only one single variable present).
+	 * @param values           The values to be added to the statement variables as an {@link Object} array.
+	 * @param verbose          Report feedback to the console?
+	 * @return                 A new ID of the statement that was added.
+	 * @throws Exception
+	 */
+	public int addStatement(int documentId, int startCaret, int endCaret, int statementTypeId, int coder, String varName, Object[] values, boolean verbose) {
+		String[] varNames = new String[] { varName };  // convert string into string array
+		return addStatement(documentId, startCaret, endCaret, statementTypeId, coder, varNames, values, verbose);
+	}
+	
+	/**
+	 * Add a new statement with custom contents to the database.
+	 * 
+	 * @param documentId       The document ID of the document to which the statement should be added.
+	 * @param startCaret       The start position of the statement in the document.
+	 * @param endCaret         The stop position of the statement in the document.
+	 * @param statementTypeId  The ID of the statement type of which the statement to be created is an instance.
+	 * @param coder            The ID of the coder that adds the current statement.
+	 * @param varNames         The variable names to which the values should be added, in the same order as the values.
+	 * @param values           The values to be added to the statement variables as an {@link Object} array.
+	 * @param verbose          Report feedback to the console?
+	 * @return                 A new ID of the statement that was added.
+	 * @throws Exception
+	 */
+	public int addStatement(int documentId, int startCaret, int endCaret, int statementTypeId, int coder, String[] varNames, Object[] values, boolean verbose) {
+		int statementId = this.data.generateNewId("statements");
+		int docLength = 0;
+		try {
+			docLength = data.getDocument(documentId).getText().length();
+		} catch (NullPointerException npe) {
+			System.err.println("Error: Document ID could not be found.");
+			return -1;
+		}
+		if (docLength == 0) {
+			System.err.println("Error: No statements can be added to this document because its length is zero.");
+			return -1;
+		}
+		Date date = data.getDocument(documentId).getDate();
+		if (startCaret < 0) {
+			System.err.println("Error: 'startCaret' must be 0 or greater than 0.");
+			return -1;
+		}
+		if (startCaret > docLength - 1) {
+			System.err.println("Error: 'startCaret' is greater than the length minus one of the document with ID " + documentId + ".");
+			return -1;
+		}
+		if (endCaret < startCaret + 1) {
+			System.err.println("Error: 'endCaret' position must be greater than the 'startCaret' position.");
+			return -1;
+		}
+		if (endCaret > docLength) {
+			System.err.println("Error: 'endCaret' is greater than the length of the document with ID " + documentId + ".");
+			return -1;
+		}
+		if (this.data.getCoderById(coder) == null) {
+			System.err.println("Error: Statement could not be added because coder ID is unknown.");
+			return -1;
+		}
+		
+		StatementType st = this.data.getStatementTypeById(statementTypeId);
+		if (st == null) {
+			System.err.println("Error: Statement could not be added because the statement type is unknown.");
+			return -1;
+		}
+		
+		LinkedHashMap<String, Object> map = new LinkedHashMap<String, Object>();
+		for (int i = 0; i < values.length; i++) {
+			if (!st.getVariables().containsKey(varNames[i])) {
+				System.err.println("Warning: The value for variable '" + varNames[i] + "' is ignored because this variable is not defined in statement type '" + st.getLabel() + "'.");
+				continue;
+			}
+			if (st.getVariables().get(varNames[i]).equals("boolean") || st.getVariables().get(varNames[i]).equals("integer")) {
+				int[] v = (int[]) values[i];
+				if (st.getVariables().get(varNames[i]).equals("boolean") && (v[0] < 0 || v[0] > 1)) {
+					System.err.println("Warning: The value for the boolean variable '" + varNames[i] + "' is replaced by 1 because the value provided is outside the valid range of values.");
+					map.put(varNames[i], 1);
+				} else {
+					map.put(varNames[i], v[0]);
+				}
+				if (verbose == true) {
+					System.out.println(varNames[i] + ": " + v[0]);
+				}
+			} else {
+				String[] v = (String[]) values[i];
+				map.put(varNames[i], v[0]);
+				
+				// also add a new attribute if the value doesn't exist yet in the database
+				String attrString = "";
+				if (this.data.getAttributeId(v[0], varNames[i], statementTypeId) == -1) {
+					int attributeId = this.data.generateNewId("attributes");
+					AttributeVector av = new AttributeVector(attributeId, v[0], "#000000", "", "", "", "", statementTypeId, varNames[i]);
+					this.data.attributes.add(av);
+					Collections.sort(this.data.getAttributes());
+					this.sql.upsertAttributeVector(av);
+					attrString = " [new attribute added]";
+				}
+				
+				if (verbose == true) {
+					System.out.println(varNames[i] + ": " + v[0] + attrString);
+				}
+			}
+		}
+		Iterator<String> mapIterator = st.getVariables().keySet().iterator();
+		String key, type;
+		while (mapIterator.hasNext()) {
+			key = mapIterator.next();
+			type = st.getVariables().get(key);
+			if (!map.containsKey(key)) {
+				if (type.equals("boolean")) {
+					map.put(key, 1);
+				} else if (type.equals("integer")) {
+					map.put(key, 0);
+				} else if (type.equals("short text") || type.equals("long text")) {
+					map.put(key, "");
+				}
+			}
+		}
+		Statement s = new Statement(statementId, documentId, startCaret, endCaret, date, statementTypeId, coder, map);
+		this.data.addStatement(s);
+		this.sql.addStatement(s, st.getVariables());
+		if (verbose == true) {
+			System.out.println("A new statement with ID " + statementId + " was added to the database in document " + documentId + ".");
+		}
+		return statementId;
+	}
+	
+	/**
+	 * Remove a statement with a given statement ID.
+	 * 
+	 * @param statementId  ID of the statement to delete from the database and memory.
+	 * @param verbose      Print details?
+	 * @throws Exception
+	 */
+	public void removeStatement(int statementId, boolean verbose) throws Exception {
+		if (this.data.getStatement(statementId) == null) {
+			throw new Exception("Statement with ID " + statementId + " not found.");
+		}
+		this.data.removeStatement(statementId);
+		this.sql.removeStatement(statementId);
+		if (verbose == true) {
+			System.out.println("Removal of Statement " + statementId + ": successful.");
+		}
+	}
+
+	
+	/* =================================================================================================================
+	 * Functions for managing statement types
+	 * =================================================================================================================
+	 */
+
+	/**
+	 * Create and return an object that contains all statement types (but not their variable definitions).
+	 * 
+	 * @return  An Object array of IDs, labels, and color strings.
+	 */
+	public Object[] getStatementTypes() {
+		int n = this.data.getStatementTypes().size();
+		int[] ids = new int[n];
+		String[] labels = new String[n];
+		String[] colors = new String[n];
+		StatementType st;
+		for (int i = 0; i < n; i++) {
+			st = this.data.getStatementTypes().get(i);
+			ids[i] = st.getId();
+			labels[i] = st.getLabel();
+			colors[i] = String.format("#%02X%02X%02X", st.getColor().getRed(), st.getColor().getGreen(), st.getColor().getBlue()); 
+		}
+		Object[] object = new Object[3];
+		object[0] = ids;
+		object[1] = labels;
+		object[2] = colors;
+		return object;
+	}
+
+	/**
+	 * Add a new, empty statement type (without variables) to the database.
+	 * 
+	 * @param statementTypeLabel  Name of the statement type.
+	 * @param color               Color of the statement type as an RGB hex string (e.g., "#FF0000").
+	 * @throws Exception
+	 */
+	public void addStatementType(String statementTypeLabel, String color) throws Exception {
+		if (this.data.getStatementType(statementTypeLabel) != null) {
+			throw new Exception("A statement type called '" + statementTypeLabel + "' already exists and will not be added.");
+		}
+		int id = this.data.generateNewId("statementTypes");
+		LinkedHashMap<String, String> variables = new LinkedHashMap<String, String>();
+		StatementType st = new StatementType(id, statementTypeLabel, color, variables);
+		this.data.addStatementType(st);
+		this.sql.upsertStatementType(st);
+	}
+
+	/**
+	 * Remove a statement type including all variables, attributes, and statements, based on the statement type label.
+	 * 
+	 * @param statementTypeLabel  Label of the statement type to be removed.
+	 * @param simulate            Simulate the changes without writing them to the database?
+	 * @param verbose             Print details to the console?
+	 * @throws Exception
+	 */
+	public void removeStatementType(String statementTypeLabel, boolean simulate, boolean verbose) throws Exception {
+		int statementTypeId = this.data.getStatementType(statementTypeLabel).getId();
+		removeStatementType(statementTypeId, simulate, verbose);
+	}
+	
+	/**
+	 * Remove a statement type including all variables, attributes, and statements, based on the statement type ID.
+	 * 
+	 * @param statementTypeId  ID of the statement type to be removed.
+	 * @param simulate         Simulate the changes without writing them to the database?
+	 * @param verbose          Print details to the console?
+	 * @throws Exception
+	 */
+	public void removeStatementType(int statementTypeId, boolean simulate, boolean verbose) throws Exception {
+		if (this.data.getStatementTypeById(statementTypeId) == null) {
+			throw new Exception("A statement type with ID " + statementTypeId + " was not found in the database.");
+		}
+		
+		// report simulation mode
+		if (verbose == true) {
+			if (simulate == true) {
+				System.out.println("Simulation mode: no actual changes are made to the database!");
+			} else {
+				System.out.println("Changes will be written both in memory and to the SQL database!");
+			}
+		}
+
+		// remove attributes associated with the statement type ID
+		int removeAttributeCounter = 0;
+		for (int i = this.data.getAttributes().size() - 1; i > -1 ; i--) {
+			if (this.data.getAttributes().get(i).getStatementTypeId() == statementTypeId) {
+				if (simulate == false) {
+					this.data.getAttributes().remove(i);
+				}
+				removeAttributeCounter++;
+			}
+		}
+		
+		// remove statements associated with the statement type ID
+		int removeStatementCounter = 0;
+		for (int i = this.data.getStatements().size() - 1; i > -1; i--) {
+			if (this.data.getStatements().get(i).getStatementTypeId() == statementTypeId) {
+				if (simulate == false) {
+					this.data.getStatements().remove(i);
+				}
+				removeStatementCounter++;
+			}
+		}
+		
+		// remove statement type
+		if (simulate == false) {
+			for (int i = this.data.getStatementTypes().size() - 1; i > -1; i--) {
+				if (this.data.getStatementTypes().get(i).getId() == statementTypeId) {
+					this.data.getStatementTypes().remove(i);
+				}
+			}
+			this.sql.removeStatementType(statementTypeId);
+		}
+
+		// report statistics
+		if (verbose == true) {
+			System.out.println("Deleted attributes:      " + removeAttributeCounter);
+			System.out.println("Deleted statements:      " + removeStatementCounter);
+			System.out.println("Deleted statement types: 1");
+		}
+	}
+
+	/**
+	 * Rename a statement type by providing a new String label, based on the current label as input.
+	 * 
+	 * @param statementTypeLabel  Label of the statement type to be renamed.
+	 * @param newLabel            New label as a string.
+	 */
+	public void renameStatementType(String statementTypeLabel, String newLabel) {
+		int statementTypeId = this.data.getStatementType(statementTypeLabel).getId();
+		this.data.getStatementTypeById(statementTypeId).setLabel(newLabel);
+		this.sql.renameStatementType(statementTypeId, newLabel);
+	}
+
+	/**
+	 * Rename a statement type by providing a new String label, based on the statement type ID as input.
+	 * 
+	 * @param statementTypeId  ID of the statement type to be renamed.
+	 * @param newLabel         New label as a string.
+	 */
+	public void renameStatementType(int statementTypeId, String newLabel) {
+		this.data.getStatementTypeById(statementTypeId).setLabel(newLabel);
+		this.sql.renameStatementType(statementTypeId, newLabel);
+	}
+
+	/**
+	 * Change the color of an existing statement type by providing a new hex color string, based on statement type label.
+	 * 
+	 * @param statementTypeLabel  Label of the statement type to be updated.
+	 * @param color               String with a hexadecimal RGB color, for example "#FFFF00".
+	 */
+	public void colorStatementType(String statementTypeLabel, String color) {
+		int statementTypeId = this.data.getStatementType(statementTypeLabel).getId();
+		colorStatementType(statementTypeId, color);
+	}
+
+	/**
+	 * Change the color of an existing statement type by providing a new hex color string, based on statement type ID.
+	 * 
+	 * @param statementTypeId  ID of the statement type to be updated.
+	 * @param color            String with a hexadecimal RGB color, for example "#FFFF00".
+	 */
+	public void colorStatementType(int statementTypeId, String color) {
+		this.data.getStatementTypeById(statementTypeId).setColor(color);
+		this.sql.colorStatementType(statementTypeId,
+				this.data.getStatementTypeById(statementTypeId).getBlue(),
+				this.data.getStatementTypeById(statementTypeId).getBlue(),
+				this.data.getStatementTypeById(statementTypeId).getBlue());
+	}
+
+	
+	/* =================================================================================================================
+	 * Functions for managing variables
+	 * =================================================================================================================
+	 */
+
+	/**
+	 * Retrieve variables and data type definitions for a given statement type (via label) and an Object array.
+	 * 
+	 * @param statementTypeLabel  Label of the statement type for which variables should be retrieved.
+	 * @return                    Object array of variables and data type definitions.
+	 */
+	public Object[] getVariables(String statementTypeLabel) {
+		int id = this.data.getStatementType(statementTypeLabel).getId();
+		return getVariables(id);
+	}
+	
+	/**
+	 * Retrieve variables and data type definitions for a given statement type (via ID) and an Object array.
+	 * 
+	 * @param statementTypeId  ID of the statement type for which variables should be retrieved.
+	 * @return                 Object array of variables and data type definitions.
+	 */
+	public Object[] getVariables(int statementTypeId) {
+		StatementType st = this.data.getStatementTypeById(statementTypeId);
+		int n = st.getVariables().size();
+		String[] variables = new String[n];
+		String[] types = new String[n];
+		int counter = 0;
+		String key, value;
+		Iterator<String> iterator = st.getVariables().keySet().iterator();
+		while (iterator.hasNext()) {
+			key = iterator.next();
+			value = st.getVariables().get(key);
+			variables[counter] = key;
+			types[counter] = value;
+			counter++;
+		}
+		Object[] object = new Object[2];
+		object[0] = variables;
+		object[1] = types;
+		return object;
+	}
+	
+	/**
+	 * Add a new variable to an existing statement type (as provided by a statement type label).
+	 * 
+	 * @param statementType    Label of the statement type in which the variable will be defined.
+	 * @param variable         Variable name.
+	 * @param dataType         Data type of the variable. Must be "short text", "long text", "integer", or "boolean".
+	 * @param simulate         Simulate the changes without writing them to the database?
+	 * @param verbose          Print details to the console?
+	 * @throws Exception
+	 */
+	public void addVariable(String statementType, String variable, String dataType, boolean simulate, boolean verbose) throws Exception {
+		int statementTypeId = this.data.getStatementType(statementType).getId();
+		addVariable(statementTypeId, variable, dataType, simulate, verbose);
+	}
+	
+	/**
+	 * Add a new variable to an existing statement type (as provided by a statement type ID).
+	 * 
+	 * @param statementTypeId  ID of the statement type in which the variable will be defined.
+	 * @param variable         Variable name.
+	 * @param dataType         Data type of the variable. Must be "short text", "long text", "integer", or "boolean".
+	 * @param simulate         Simulate the changes without writing them to the database?
+	 * @param verbose          Print details to the console?
+	 * @throws Exception
+	 */
+	public void addVariable(int statementTypeId, String variable, String dataType, boolean simulate, boolean verbose) throws Exception {
+		if (this.data.getStatementTypeById(statementTypeId) == null) {
+			throw new Exception("A statement type with ID " + statementTypeId + " was not found in the database.");
+		}
+		if (this.data.getStatementTypeById(statementTypeId).getVariables().containsKey(variable)) {
+			throw new Exception("Variable '" + variable + "' already exists in statement type ID " + statementTypeId + ".");
+		}
+		if (!dataType.equals("short text") && !dataType.equals("long text") && !dataType.equals("integer") && !dataType.equals("boolean")) {
+			throw new Exception("Data type is invalid.");
+		}
+
+		// report simulation mode
+		if (verbose == true) {
+			if (simulate == true) {
+				System.out.println("Simulation mode: no actual changes are made to the database!");
+			} else {
+				System.out.println("Changes will be written both in memory and to the SQL database!");
+			}
+		}
+
+		if (simulate == false) {
+			this.data.getStatementTypeById(statementTypeId).getVariables().put(variable, dataType);
+			this.sql.addVariable(variable, dataType, statementTypeId);
+		}
+		if (dataType.equals("short text") || dataType.equals("long text")) {
+			AttributeVector av = new AttributeVector(this.data.generateNewId("attributes"), "", "#000000", "", "", "", "", statementTypeId, variable);
+			if (simulate == false) {
+				this.data.getAttributes().add(av);
+				Collections.sort(this.data.getAttributes());
+				this.sql.upsertAttributeVector(av);
+			}
+		}
+		int updateStatementsCount = 0;
+		for (int i = 0; i < this.data.getStatements().size(); i++) {
+			if (this.data.getStatements().get(i).getStatementTypeId() == statementTypeId 
+					&& !this.data.getStatements().get(i).getValues().containsKey(variable)) {
+				if (simulate == false) {
+					if (dataType.equals("short text") || dataType.equals("long text")) {
+						this.data.getStatements().get(i).getValues().put(variable, "");
+						this.sql.upsertVariableContent("", this.data.getStatements().get(i).getId(), variable, statementTypeId, dataType);
+					} else if (dataType.equals("boolean")) {
+						this.data.getStatements().get(i).getValues().put(variable, 1);
+						this.sql.upsertVariableContent(1, this.data.getStatements().get(i).getId(), variable, statementTypeId, dataType);
+					} else if (dataType.equals("integer")) {
+						this.data.getStatements().get(i).getValues().put(variable, 0);
+						this.sql.upsertVariableContent(0, this.data.getStatements().get(i).getId(), variable, statementTypeId, dataType);
+					}
+				}
+				updateStatementsCount++;
+			}
+		}
+
+		// report statistics
+		if (verbose == true) {
+			System.out.println("Added variables:    1");
+			System.out.println("Added attributes:   1");
+			System.out.println("Updated statements: " + updateStatementsCount);
+		}
+	}
+
+	/**
+	 * Remove a variable from a statement type, including attributes and statements.
+	 * 
+	 * @param statementTypeLabel  The String label of the statement type in which the variable is defined.
+	 * @param variable            The name of the variable as a String.
+	 * @param simulate            If true, changes are not actually carried out.
+	 * @param verbose             Should statistics on updating process be reported?
+	 * @throws Exception
+	 */
+	public void removeVariable(String statementTypeLabel, String variable, boolean simulate, boolean verbose) throws Exception {
+		int statementTypeId = this.data.getStatementType(statementTypeLabel).getId();
+		removeVariable(statementTypeId, variable, simulate, verbose);
+	}
+	
+	/**
+	 * Remove a variable from a statement type, including attributes and statements.
+	 * 
+	 * @param statementTypeId  The ID of the statement type in which the variable is defined.
+	 * @param variable         The name of the variable as a String.
+	 * @param simulate         If true, changes are not actually carried out.
+	 * @param verbose          Should statistics on updating process be reported?
+	 * @throws Exception
+	 */
+	public void removeVariable(int statementTypeId, String variable, boolean simulate, boolean verbose) throws Exception {
+		if (!this.data.getStatementTypeById(statementTypeId).getVariables().containsKey(variable)) {
+			throw new Exception("Variable '" + variable + "' does not exist in statement type " + statementTypeId + ".");
+		}
+		int removeFromStatementCounter = 0;
+		int removeAttributeCounter = 0;
+		for (int i = this.data.getAttributes().size() - 1; i > -1 ; i--) {
+			if (this.data.getAttributes().get(i).getStatementTypeId() == statementTypeId && this.data.getAttributes().get(i).getVariable().equals(variable)) {
+				if (simulate == false) {
+					this.data.getAttributes().remove(i);
+				}
+				removeAttributeCounter++;
+			}
+		}
+		for (int i = 0; i < this.data.getStatements().size(); i++) {
+			if (this.data.getStatements().get(i).getStatementTypeId() == statementTypeId) {
+				if (simulate == false) {
+					this.data.getStatements().get(i).getValues().remove(variable);
+				}
+				removeFromStatementCounter++;
+			}
+		}
+		if (simulate == false) {
+			this.data.getStatementTypeById(statementTypeId).getVariables().remove(variable);
+			this.sql.removeVariable(statementTypeId, variable);
+		}
+
+		// report statistics
+		if (verbose == true) {
+			System.out.println("Removed attributes: " + removeAttributeCounter);
+			System.out.println("Updated statements: " + removeFromStatementCounter);
+			System.out.println("Removed variables:  1");
+		}
+	}
+
+	/**
+	 * Rename a variable by providing a new String label, based on the statement type label and variable label as input.
+	 * 
+	 * @param statementTypeLabel  Label of the statement type to be renamed.
+	 * @param variable            Old variable name.
+	 * @param newLabel            New label as a string.
+	 * @param simulate            If true, changes are not actually carried out.
+	 * @param verbose             Should statistics on updating process be reported?
+	 * @throws Exception 
+	 */
+	public void renameVariable(String statementTypeLabel, String variable, String newLabel, boolean simulate, boolean verbose) throws Exception {
+		int statementTypeId = this.data.getStatementType(statementTypeLabel).getId();
+		renameVariable(statementTypeId, variable, newLabel, simulate, verbose);
+	}
+	
+	/**
+	 * Rename a variable by providing a new String label, based on the statement type ID and variable label as input.
+	 * 
+	 * @param statementTypeId  ID of the statement type to be renamed.
+	 * @param variable         Old variable name.
+	 * @param newLabel         New label as a string.
+	 * @param simulate         If true, changes are not actually carried out.
+	 * @param verbose          Should statistics on updating process be reported?
+	 * @throws Exception 
+	 */
+	public void renameVariable(int statementTypeId, String variable, String newLabel, boolean simulate, boolean verbose) throws Exception {
+		if (this.data.getStatementTypeById(statementTypeId) == null) {
+			throw new Exception("A statement type with ID " + statementTypeId + " was not found in the database.");
+		}
+		if (newLabel.contains(" ")) {
+			throw new Exception("The new variable name contains spaces. This is not permitted.");
+		}
+		
+		// report simulation mode
+		if (verbose == true) {
+			if (simulate == true) {
+				System.out.println("Simulation mode: no actual changes are made to the database!");
+			} else {
+				System.out.println("Changes will be written both in memory and to the SQL database!");
+			}
+		}
+
+		// update attributes
+		int updateAttributeCounter = 0;
+		for (int i = 0; i < this.data.getAttributes().size(); i++) {
+			if (this.data.getAttributes().get(i).getStatementTypeId() == statementTypeId && this.data.getAttributes().get(i).getVariable().equals(variable)) {
+				if (simulate == false) {
+					this.data.getAttributes().get(i).setVariable(newLabel);
+				}
+				updateAttributeCounter++;
+			}
+		}
+		
+		// update statements
+		int updateStatementCounter = 0;
+		for (int i = 0; i < this.data.getStatements().size(); i++) {
+			if (this.data.getStatements().get(i).getStatementTypeId() == statementTypeId) {
+				if (simulate == false) {
+					this.data.getStatements().get(i).getValues().put(newLabel, this.data.getStatements().get(i).getValues().get(variable));
+					this.data.getStatements().get(i).getValues().remove(variable);
+				}
+				updateStatementCounter++;
+			}
+		}
+		
+		// update statement type
+		if (simulate == false) {
+			String dataType = this.data.getStatementTypeById(statementTypeId).getVariables().get(variable);
+			this.data.getStatementTypeById(statementTypeId).getVariables().put(newLabel, dataType);
+			this.data.getStatementTypeById(statementTypeId).getVariables().remove(variable);
+		}
+		
+		// also change in the SQL database
+		if (simulate == false) {
+			this.sql.renameVariable(statementTypeId, variable, newLabel);
+		}
+
+		// report statistics
+		if (verbose == true) {
+			System.out.println("Updated attributes: " + updateAttributeCounter);
+			System.out.println("Updated statements: " + updateStatementCounter);
+			System.out.println("Updated variables:  1");
+		}
+	}
+
+	/**
+	 * Recast a variable from short text to long text, from long text to short text, from integer to boolean, or from 
+	 * boolean to integer, including any necessary changes in statements and attributes. Based on statement type label
+	 * 
+	 * @param statementTypeLabel  Label of the statement type in which the variable is defined.
+	 * @param variable            Name of the variable to be recast.
+	 * @param simulate            If true, changes are not actually carried out.
+	 * @param verbose             Should statistics on updating process be reported?
+	 * @throws Exception
+	 */
+	public void recastVariable(String statementTypeLabel, String variable, boolean simulate, boolean verbose) throws Exception {
+		int statementTypeId = this.data.getStatementType(statementTypeLabel).getId();
+		recastVariable(statementTypeId, variable, simulate, verbose);
+	}
+	
+	/**
+	 * Recast a variable from short text to long text, from long text to short text, from integer to boolean, or from 
+	 * boolean to integer, including any necessary changes in statements and attributes. Based on statement type ID.
+	 * 
+	 * @param statementTypeId  ID of the statement type in which the variable is defined.
+	 * @param variable         Name of the variable to be recast.
+	 * @param simulate         If true, changes are not actually carried out.
+	 * @param verbose          Should statistics on updating process be reported?
+	 * @throws Exception
+	 */
+	public void recastVariable(int statementTypeId, String variable, boolean simulate, boolean verbose) throws Exception {
+		
+		// check validity of input arguments
+		if (this.data.getStatementTypeById(statementTypeId) == null) {
+			throw new Exception("A statement type with ID " + statementTypeId + " was not found in the database.");
+		}
+		if (!this.data.getStatementTypeById(statementTypeId).getVariables().containsKey(variable)) {
+			throw new Exception("Variable '" + variable + "' is undefined in statement type " + statementTypeId + ".");
+		}
+		
+		// report simulation mode
+		if (verbose == true) {
+			if (simulate == true) {
+				System.out.println("Simulation mode: no actual changes are made to the database!");
+			} else {
+				System.out.println("Changes will be written both in memory and to the SQL database!");
+			}
+		}
+
+		// do the recoding, depending on which input data type is found
+		int updateAttributeCounter = 0;
+		int updateStatementCounter = 0;
+		String oldDataType = this.data.getStatementTypeById(statementTypeId).getVariables().get(variable);
+		if (oldDataType.equals("short text")) { // just change the data type; no other changes necessary
+			if (simulate == false) {
+				this.data.getStatementTypeById(statementTypeId).getVariables().put(variable, "long text");
+				this.sql.recastVariable(statementTypeId, variable);
+			}
+		} else if (oldDataType.equals("long text")) { // cut off values in statements and attributes that are longer than 200 characters and change data type
+			ArrayList<String> oldValues = new ArrayList<String>();
+			String oldValue;
+			if (this.data.getStatements().size() > 0) {
+				for (int i = 0; i < this.data.getStatements().size(); i++) {
+					if (((String) this.data.getStatements().get(i).getValues().get(variable)).length() > 200) {
+						oldValue = (String) this.data.getStatements().get(i).getValues().get(variable);
+						if (!oldValues.contains(oldValue)) {
+							oldValues.add(oldValue);
+						}
+						if (simulate == false) {
+							this.data.getStatements().get(i).getValues().put(variable, oldValue.substring(0, 200));
+							this.sql.upsertVariableContent(oldValue.substring(0, 200), this.data.getStatements().get(i).getId(), variable, statementTypeId, "long text");
+						}
+						updateStatementCounter++;
+					}
+				}
+			}
+			if (oldValues.size() > 0) {
+				int index;
+				for (int i = 0; i < oldValues.size(); i++) {
+					index = this.data.getAttributeIndex(oldValues.get(i), variable, statementTypeId);
+					if (simulate == false) {
+						this.data.getAttributes().get(index).setValue(oldValues.get(i).substring(0, 200));
+						this.sql.updateAttribute(this.data.getAttributes().get(index).getId(), "Value", oldValues.get(i).substring(0, 200));
+					}
+					updateAttributeCounter++;
+				}
+			}
+			if (simulate == false) {
+				this.data.getStatementTypeById(statementTypeId).getVariables().put(variable, "short text");
+				this.sql.recastVariable(statementTypeId, variable);
+			}
+		} else if (oldDataType.equals("integer")) { // recode statements into boolean and change data type; do not modify attributes
+			ArrayList<Integer> oldValues = new ArrayList<Integer>();
+			int oldValue;
+			if (this.data.getStatements().size() > 0) {
+				for (int i = 0; i < this.data.getStatements().size(); i++) {
+					oldValue = (int) this.data.getStatements().get(i).getValues().get(variable);
+					if (!oldValues.contains(oldValue)) {
+						oldValues.add(oldValue);
+					}
+				}
+				Collections.sort(oldValues);
+			}
+			if (oldValues.size() > 2) { // old integer variable has more than two values: fail
+				System.err.print("Variable type could not be changed from integer to boolean because there are more than two values:");
+				for (int i = 0; i < oldValues.size(); i++) {
+					System.err.print(" " + oldValues.get(i));
+				}
+				System.err.println("\nUse the dna_setStatements() function to recode values.");
+			} else if (oldValues.size() == 2) { // old integer variable has exactly two values: recode into 0 and 1 where necessary
+				for (int i = 0; i < this.data.getStatements().size(); i++) {
+					oldValue = (int) this.data.getStatements().get(i).getValues().get(variable);
+					if (oldValue == oldValues.get(0) && oldValue != 0) {
+						if (simulate == false) {
+							this.data.getStatements().get(i).getValues().put(variable, 0);
+							this.sql.upsertVariableContent(0, this.data.getStatements().get(i).getId(), variable, statementTypeId, "integer");
+						}
+						updateStatementCounter++;
+					} else if (oldValue == oldValues.get(1) && oldValue != 1) {
+						if (simulate == false) {
+							this.data.getStatements().get(i).getValues().put(variable, 1);
+							this.sql.upsertVariableContent(1, this.data.getStatements().get(i).getId(), variable, statementTypeId, "integer");
+						}
+						updateStatementCounter++;
+					}
+				}
+			} else if (oldValues.size() == 1) { // old integer variable has only one value: recode that value into 1
+				for (int i = 0; i < this.data.getStatements().size(); i++) {
+					oldValue = (int) this.data.getStatements().get(i).getValues().get(variable);
+					if (oldValue != 1) {
+						if (simulate == false) {
+							this.data.getStatements().get(i).getValues().put(variable, 1);
+							this.sql.upsertVariableContent(1, this.data.getStatements().get(i).getId(), variable, statementTypeId, "integer");
+						}
+						updateStatementCounter++;
+					}
+				}
+			} else {
+				// no statements to recode
+			}
+			if (simulate == false) {
+				this.data.getStatementTypeById(statementTypeId).getVariables().put(variable, "boolean");
+				this.sql.recastVariable(statementTypeId, variable);
+			}
+		} else if (oldDataType.equals("boolean")) { // recode statements from [0; 1] to [-1; +1]
+			if (simulate == false) {
+				this.data.getStatementTypeById(statementTypeId).getVariables().put(variable, "integer");
+				this.sql.recastVariable(statementTypeId, variable);
+			}
+			for (int i = 0; i < this.data.getStatements().size(); i++) {
+				if ((int) this.data.getStatements().get(i).getValues().get(variable) == 0) {
+					if (simulate = false) {
+						this.data.getStatements().get(i).getValues().put(variable, -1);
+						this.sql.upsertVariableContent(-1, this.data.getStatements().get(i).getId(), variable, statementTypeId, "integer");
+					}
+					updateStatementCounter++;
+				}
+			}
+		} else {
+			throw new Exception("Data type not recognized.");
+		}
+		
+		// report statistics
+		if (verbose == true) {
+			System.out.println("Updated variables:  1");
+			System.out.println("Updated attributes: " + updateAttributeCounter);
+			System.out.println("Updated statements: " + updateStatementCounter);
 		}
 	}
 }

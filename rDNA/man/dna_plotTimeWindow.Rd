@@ -37,8 +37,7 @@ passed on with \code{+}.
 \examples{
 \dontrun{
 library("ggplot2")
-dna_downloadJar()
-dna_init("dna-2.0-beta22.jar")
+dna_init()
 conn <- dna_connection(dna_sample())
 
 tW <- dna_timeWindow(connection = conn,

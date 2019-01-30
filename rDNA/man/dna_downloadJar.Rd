@@ -2,27 +2,23 @@
 % Please edit documentation in R/rDNA.R
 \name{dna_downloadJar}
 \alias{dna_downloadJar}
-\title{Download the binary DNA JAR file}
+\title{Download the binary DNA jar file}
 \usage{
-dna_downloadJar(filename = "dna-2.0-beta22.jar",
-  filepath = character(), force = FALSE)
+dna_downloadJar(path = paste0(dirname(system.file(".", package =
+  "rDNA")), "/", "extdata"), force = FALSE, returnString = FALSE)
 }
 \arguments{
-\item{filename}{Name of the downloaded Jar.}
+\item{path}{Directory path in which the jar file will be stored.}
 
-\item{filepath}{Download path. Defaults to working directory.}
+\item{force}{Logical. Should the file be overwritten if it already exists?}
 
-\item{force}{Logical. Should the file be overwritten if it already exists.}
+\item{returnString}{Logical. Return the file name of the downloaded jar file?}
 }
 \description{
-Downloads the newest released DNA JAR file necessary for running
-\code{dna_init}.
+Downloads the newest released DNA jar file necessary for running
+\link{dna_init}.
 }
 \details{
-This simple function downloads the DNA JAR from the latest release.
-}
-\examples{
-\dontrun{
-dna_downloadJar()
-}
+This function uses GitHub's API to download the latest DNA jar file to the
+working directory.
 }

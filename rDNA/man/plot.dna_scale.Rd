@@ -12,16 +12,18 @@
 \item{...}{Further options (currently not used).}
 }
 \description{
-Plot convergence diagnostics of the MCMC chain created by the four 
+Plot convergence diagnostics of the MCMC chain created by the four
 \code{dna_scale} functions.
 }
 \details{
-Plots \code{trace plots} of the \code{dna_scale} MCMC output. For further 
+Plots \code{trace plots} of the \code{dna_scale} MCMC output. For further
 convergence diagnostics, see \link{dna_convergenceScale}.
 }
 \examples{
 \dontrun{
-dna_scale <- dna_scale1dbin(connection,
+dna_init()
+conn <- dna_connection(dna_sample())
+dna_scale <- dna_scale1dbin(conn,
                             variable1 = "organization",
                             variable2 = "concept",
                             qualifier = "agreement",

@@ -1,20 +1,19 @@
 Package: rDNA
-Version: 2.1.9
-Date: 2018-11-05
+Version: 2.1.12
+Date: 2019-01-27
 Title: Discourse Network Analysis in R
 Authors@R: 
     c(person("Philip", "Leifeld", email = "Philip.Leifeld@glasgow.ac.uk", 
-    role = c("aut", "cre", "cph")), 
-    person("Johannes", "Gruber", email = "j.gruber.1@research.gla.ac.uk", 
-    role = "aut"), 
-    person("Tim", "Henrichsen", email = "tim.henrichsen@santannapisa.it", 
-    role = "ctb"))
+             role = c("aut", "cre", "cph")), 
+      person("Johannes", "Gruber", email = "j.gruber.1@research.gla.ac.uk", 
+             role = "ctb"), 
+      person("Tim", "Henrichsen", email = "tim.henrichsen@santannapisa.it", 
+             role = "ctb"))
 Maintainer: Philip Leifeld <Philip.Leifeld@glasgow.ac.uk>
 Description: Qualitative content analysis and discourse network analysis 
     using the Java software Discourse Network Analyzer (DNA).
 Depends:
-    R (>= 3.0.0),
-    rJava (>= 0.5-0)
+    R (>= 3.0.0)
 Imports: 
     cluster (>= 2.0.0),
     coda (>= 0.19.1),
@@ -30,6 +29,7 @@ Imports:
     network (>= 1.13.0.1),
     reshape2 (>= 1.4.3),
     rem (>= 1.2.8),
+    rJava (>= 0.5-0),
     scales (>= 0.5.0),
     sna (>= 2.0),
     splitstackshape (>= 1.4.2),
@@ -38,11 +38,13 @@ Imports:
     vegan (>= 2.4.6), 
     igraph (>= 1.1.0),
     parallel (>= 3.0.0)
-SystemRequirements: Java (>= 1.8), libudunits2-dev (Linux)
-License: GPL-3
-LazyData: true
-RoxygenNote: 6.1.1
-Encoding: UTF-8
 Suggests: 
     testthat,
     covr
+SystemRequirements: Java (>= 1.8), libudunits2-dev (Linux)
+License: GPL-3
+LazyData: true
+URL: https://github.com/leifeld/dna
+BugReports: https://github.com/leifeld/dna/issues
+RoxygenNote: 6.1.1
+Encoding: UTF-8

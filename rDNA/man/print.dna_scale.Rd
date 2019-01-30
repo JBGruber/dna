@@ -12,16 +12,18 @@
 \item{...}{Further options (currently not used).}
 }
 \description{
-Show details of the MCMC chain created by the four \code{dna_scale} 
+Show details of the MCMC chain created by the four \code{dna_scale}
 functions.
 }
 \details{
-Prints the method that was used for the scaling, the number of values in the 
+Prints the method that was used for the scaling, the number of values in the
 object and their means.
 }
 \examples{
 \dontrun{
-dna_scale <- dna_scale1dbin(connection,
+dna_init()
+conn <- dna_connection(dna_sample())
+dna_scale <- dna_scale1dbin(conn,
                             variable1 = "organization",
                             variable2 = "concept",
                             qualifier = "agreement",
@@ -30,7 +32,7 @@ dna_scale <- dna_scale1dbin(connection,
                             mcmc_burnin = 2000,
                             mcmc_thin = 10,
                             store_variables = "both")
-dna_scale                           
+dna_scale
 }
 }
 \author{

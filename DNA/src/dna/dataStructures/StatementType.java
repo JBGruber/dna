@@ -11,6 +11,13 @@ public class StatementType implements Comparable<StatementType> {
 	Color color;
 	LinkedHashMap<String, String> variables;
 
+	public StatementType(int id, String label, String color, LinkedHashMap<String, String> variables) {
+		this.id = id;
+		this.label = label;
+		this.color = new Color(Integer.parseInt(color.substring(1), 16));
+		this.variables = variables;
+	}
+	
 	public StatementType(int id, String label, Color color, LinkedHashMap<String, String> variables) {
 		this.id = id;
 		this.label = label;
@@ -57,6 +64,42 @@ public class StatementType implements Comparable<StatementType> {
 	 */
 	public Color getColor() {
 		return color;
+	}
+
+	/**
+	 * Retrieve the red color (as part of RGB) of the statement type.
+	 * 
+	 * @return  The red color.
+	 */
+	public int getRed() {
+		return color.getRed();
+	}
+
+	/**
+	 * Retrieve the green color (as part of RGB) of the statement type.
+	 * 
+	 * @return  The green color.
+	 */
+	public int getGreen() {
+		return color.getGreen();
+	}
+
+	/**
+	 * Retrieve the blue color (as part of RGB) of the statement type.
+	 * 
+	 * @return  The blue color.
+	 */
+	public int getBlue() {
+		return color.getBlue();
+	}
+
+	/**
+	 * Set the color of the statement type.
+	 * 
+	 * @param color  The color to set, as a hex RGB string, such as "#FFFF00".
+	 */
+	public void setColor(String color) {
+		this.color = new Color(Integer.parseInt(color.substring(1), 16));
 	}
 
 	/**

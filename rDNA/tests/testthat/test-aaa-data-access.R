@@ -12,7 +12,7 @@ test_that("download Jar", {
 })
 
 # only for local testing
-if (!nchar(Sys.getenv("TRAVIS_R_VERSION")) > 0) {
+if (tolower(Sys.getenv("NOT_CRAN")) %in% c("1", "yes", "true")) {
   test_that("make DNA",{
     expect_equal({
       unlink(dir(pattern = "dna-.+\\.jar$"))
@@ -21,7 +21,8 @@ if (!nchar(Sys.getenv("TRAVIS_R_VERSION")) > 0) {
                  full.names = TRUE)
       file.copy(
         from = jar,
-        to = basename(jar)
+        to = paste0("../../inst/extdata/", basename(jar)),
+        overwrite = TRUE
       )
     }, TRUE)
   })
@@ -29,7 +30,11 @@ if (!nchar(Sys.getenv("TRAVIS_R_VERSION")) > 0) {
 
 test_that("initialise DNA",{
   expect_equal({
-    jar <- dir(pattern = "^dna-.+\\.jar$")
+    jar <- dir("../../inst/extdata", "^dna-.+\\.jar$", full.names = TRUE)
+    if (!length(jar) > 0) 
+      jar <- dir(paste0(system.file(package = "rDNA"), "/extdata"), 
+                 "^dna-.+\\.jar$", 
+                 full.names = TRUE)
     dna_init(jar)
     rJava::.jarray(1:5)@jsig
   }, "[I")

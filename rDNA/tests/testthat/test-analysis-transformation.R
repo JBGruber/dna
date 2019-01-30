@@ -1,6 +1,5 @@
 context("Analysis/Transformation")
 
-dna_init()
 conn <- dna_connection("sample.dna")
 
 test_that("cluster", {

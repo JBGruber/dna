@@ -12,7 +12,8 @@ test_that("download Jar", {
 })
 
 # only for local testing
-if (tolower(Sys.getenv("NOT_CRAN")) %in% c("1", "yes", "true")) {
+if (tolower(Sys.getenv("NOT_CRAN")) %in% c("1", "yes", "true") &
+    !nchar(Sys.getenv("TRAVIS_R_VERSION")) > 0) {
   test_that("make DNA",{
     expect_equal({
       unlink(dir(pattern = "dna-.+\\.jar$"))

@@ -4,7 +4,8 @@
 \alias{dna_renameVariable}
 \title{Rename a variable}
 \usage{
-dna_renameVariable(connection, statementType, variable, label)
+dna_renameVariable(connection, statementType, variable, label,
+  simulate = TRUE, verbose = TRUE)
 }
 \arguments{
 \item{connection}{A \code{dna_connection} object created by the
@@ -18,6 +19,12 @@ character string, for example \code{1} or \code{"DNA Statement"}.}
 
 \item{label}{A descriptive new label for the variable. For example
 \code{"actor" or "intensity"}. The label must not contain spaces.}
+
+\item{simulate}{Should the changes only be simulated instead of actually
+applied to the DNA connection and the SQL database? This can help to
+plan more complex recode operations.}
+
+\item{verbose}{Print details about the recode operations?}
 }
 \description{
 Rename a variable by assigning a new label.

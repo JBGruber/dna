@@ -35,6 +35,7 @@ test_that("dna_network without qualifier", {
     attr(nw, "start") <- NULL
     attr(nw, "stop") <- NULL
     attr(nw, "call") <- NULL
+    nw <- unclass(nw)
     nw
   }, readRDS("../files/dna_network_no_qualifier.RDS"))
 })

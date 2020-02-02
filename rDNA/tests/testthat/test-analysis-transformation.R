@@ -32,11 +32,11 @@ test_that("dna_network without qualifier", {
                       variable1 = "person",
                       variable2 = "concept",
                       qualifier = NULL)
-    nw <- as.vector(nw)
+    attr(nw, "start") <- NULL
+    attr(nw, "stop") <- NULL
+    attr(nw, "call") <- NULL
     nw
-  }, c(0, 22, 6, 8, 4, 2, 2, 22, 0, 12, 22, 2, 10, 1, 6, 12, 0, 7, 
-       6, 4, 6, 8, 22, 7, 0, 6, 4, 3, 4, 2, 6, 6, 0, 4, 4, 2, 10, 4, 
-       4, 4, 0, 3, 2, 1, 6, 3, 4, 3, 0))
+  }, readRDS("../files/dna_network_no_qualifier.RDS"))
 })
 
 # saveRDS(nw, file = "../files/dna_network_no_qualifier.RDS", version = 2)
